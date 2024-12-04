@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { database } from '../config/firebase';
 import { ref, get, onValue, set } from 'firebase/database';
-import { AiOutlineLock, AiOutlineUnlock } from 'react-icons/ai';
+import { AiOutlineLock, AiOutlineUnlock, AiOutlineRight, AiOutlineLeft } from 'react-icons/ai';
 
 interface Room {
   id: string;
@@ -25,6 +25,7 @@ const Home = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const router = useRouter();
   const roomTimers = useRef<TimerMap>({});
+  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
 
   useEffect(() => {
     console.log('Starting rooms listener');
@@ -233,11 +234,30 @@ const Home = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 relative">
       {/* 已建房間列表 */}
-      <div className="absolute top-4 right-4 w-80 bg-black bg-opacity-50 rounded-lg shadow-lg p-4">
-        <h3 className="text-white text-lg font-medium mb-2">
-          已建房間 ({rooms?.length || 0})
-        </h3>
-        <ul className="space-y-2">
+      <div className={`absolute top-4 right-4 transition-all duration-300 ${
+        isRoomListCollapsed ? 'w-12' : 'w-80'
+      } bg-black bg-opacity-50 rounded-lg shadow-lg`}>
+        <div className="flex items-center justify-between p-4">
+          <h3 className={`text-white text-lg font-medium ${
+            isRoomListCollapsed ? 'hidden' : 'block'
+          }`}>
+            已建房間 ({rooms?.length || 0})
+          </h3>
+          <button
+            onClick={() => setIsRoomListCollapsed(!isRoomListCollapsed)}
+            className="text-white hover:text-gray-300 transition-colors"
+          >
+            {isRoomListCollapsed ? (
+              <AiOutlineRight className="w-6 h-6" />
+            ) : (
+              <AiOutlineLeft className="w-6 h-6" />
+            )}
+          </button>
+        </div>
+        
+        <ul className={`space-y-2 px-4 pb-4 ${
+          isRoomListCollapsed ? 'hidden' : 'block'
+        }`}>
           {rooms && rooms.length > 0 ? (
             rooms.map((room) => (
               <li 

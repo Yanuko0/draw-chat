@@ -5,7 +5,7 @@ import { AiOutlineLeft, AiOutlineRight } from 'react-icons/ai';
 
 const Toolbar = () => {
   const { tool, strokeColor, strokeWidth, setTool, setStrokeWidth, setStrokeColor } = useCanvasStore();
-  const [isToolbarMinimized, setIsToolbarMinimized] = useState(false);
+  const [isToolbarMinimized, setIsToolbarMinimized] = useState(true);
 
   const handleToolChange = (newTool: Tool) => {
     console.log('Toolbar: Changing tool from', tool, 'to', newTool);
@@ -15,7 +15,7 @@ const Toolbar = () => {
   };
 
   return (
-    <div className={`fixed top-4 left-4 z-50 bg-white rounded-lg shadow-lg border border-gray-200 transition-all duration-300 ${
+    <div className={`fixed top-4 left-4 z-50 bg-black bg-opacity-50 rounded-lg shadow-lg transition-all duration-300 ${
       isToolbarMinimized ? 'w-12' : 'w-auto'
     }`}>
       {isToolbarMinimized ? (
@@ -24,30 +24,43 @@ const Toolbar = () => {
           <div className="flex flex-col items-center gap-2">
             <button
               onClick={() => setIsToolbarMinimized(false)}
-              className="p-1 hover:bg-gray-100 rounded"
+              className="p-1 hover:bg-white/20 rounded transition-colors"
               title="展開工具列"
             >
-              <AiOutlineRight className="w-4 h-4" />
+              <AiOutlineRight className="w-4 h-4 text-white" />
             </button>
-            <div 
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100"
-              title={`當前工具: ${
-                tool === 'eraser' ? '橡皮擦' :
-                tool === 'pencil' ? '鉛筆' :
-                tool === 'pen' ? '原子筆' :
-                tool === 'brush' ? '毛筆' :
-                tool === 'marker' ? '麥克筆' : tool
-              }`}
-            >
-              {tool === 'eraser' ? '擦' :
-               tool === 'pencil' ? '筆' :
-               tool === 'pen' ? '筆' :
-               tool === 'brush' ? '筆' :
-               tool === 'marker' ? '筆' : tool.charAt(0)}
+
+            {/* 工具選擇按鈕 */}
+            <div className="flex flex-col gap-2">
+              <button
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                  tool !== 'eraser' 
+                    ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                    : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
+                onClick={() => handleToolChange('pencil')}
+                title="鉛筆"
+              >
+                筆
+              </button>
+
+              <button
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                  tool === 'eraser' 
+                    ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                    : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
+                onClick={() => handleToolChange('eraser')}
+                title="橡皮擦"
+              >
+                擦
+              </button>
             </div>
+
+            {/* 顯示當前顏色 */}
             {tool !== 'eraser' && (
               <div 
-                className="w-6 h-6 rounded-full border border-gray-300"
+                className="w-6 h-6 rounded-full border border-white/30 shadow-sm"
                 style={{ backgroundColor: strokeColor }}
                 title="當前顏色"
               />
@@ -61,21 +74,21 @@ const Toolbar = () => {
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-2">
                 <select
-                  className="px-2 md:px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 border border-gray-300 text-sm"
+                  className="px-2 md:px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-white text-sm transition-colors"
                   onChange={(e) => handleToolChange(e.target.value as Tool)}
                   value={tool === 'eraser' ? 'pencil' : tool}
                 >
-                  <option value="pencil">鉛筆</option>
-                  <option value="pen">原子筆</option>
-                  <option value="brush">毛筆</option>
-                  <option value="marker">麥克筆</option>
+                  <option className="bg-gray-800 text-white" value="pencil">鉛筆</option>
+                  <option className="bg-gray-800 text-white" value="pen">原子筆</option>
+                  <option className="bg-gray-800 text-white" value="brush">毛筆</option>
+                  <option className="bg-gray-800 text-white" value="marker">麥克筆</option>
                 </select>
 
                 <button
-                  className={`px-3 md:px-4 py-2 rounded-lg border whitespace-nowrap text-sm ${
+                  className={`px-3 md:px-4 py-2 rounded-lg whitespace-nowrap text-sm transition-colors ${
                     tool === 'eraser' 
-                      ? 'bg-blue-500 text-white border-blue-600' 
-                      : 'bg-gray-100 hover:bg-gray-200 border-gray-300'
+                      ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                      : 'bg-white/20 hover:bg-white/30 text-white'
                   }`}
                   onClick={() => handleToolChange(tool === 'eraser' ? 'pencil' : 'eraser')}
                 >
@@ -89,7 +102,7 @@ const Toolbar = () => {
                     type="color"
                     value={strokeColor}
                     onChange={(e) => setStrokeColor(e.target.value)}
-                    className="w-8 h-8 cursor-pointer rounded border border-gray-300"
+                    className="w-8 h-8 cursor-pointer rounded border border-white/30"
                   />
                   <div className="flex items-center gap-2">
                     <input
@@ -100,7 +113,7 @@ const Toolbar = () => {
                       onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
                       className="w-32"
                     />
-                    <span className="text-sm w-12">{strokeWidth}px</span>
+                    <span className="text-sm w-12 text-white">{strokeWidth}px</span>
                   </div>
                 </div>
               )}
@@ -108,10 +121,10 @@ const Toolbar = () => {
 
             <button
               onClick={() => setIsToolbarMinimized(true)}
-              className="ml-4 p-1 hover:bg-gray-100 rounded"
+              className="ml-4 p-1 hover:bg-white/20 rounded transition-colors"
               title="收起工具列"
             >
-              <AiOutlineLeft className="w-4 h-4" />
+              <AiOutlineLeft className="w-4 h-4 text-white" />
             </button>
           </div>
         </div>

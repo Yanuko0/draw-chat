@@ -70,13 +70,15 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [chatHeight, setChatHeight] = useState(160); // 預設高度 160px (4列)
   const [users, setUsers] = useState<string[]>([]);
-  const [isRoomInfoMinimized, setIsRoomInfoMinimized] = useState(false);
+  const [isRoomInfoMinimized, setIsRoomInfoMinimized] = useState(true);
   const [roomInfoHeight, setRoomInfoHeight] = useState(200); // 預設高度
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectedElements, setSelectedElements] = useState<any[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
   const fabricRef = useRef<FabricCanvas | null>(null);
   const [isToolbarMinimized, setIsToolbarMinimized] = useState(false);
+  const [toolbarPosition, setToolbarPosition] = useState<'right' | 'left' | 'top' | 'bottom'>('right');
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
 
   // Firebase 監聽
   useEffect(() => {
@@ -404,11 +406,23 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         layer.removeChildren();
         layer.batchDraw();
       });
-      
-      // 更新資料庫
-      const roomRef = ref(database, `rooms/${roomId}/drawings`);
-      set(roomRef, null);
     }
+    
+    // 清除 Firebase 中的所有數據
+    const roomRef = ref(database, `rooms/${roomId}`);
+    const updates = {
+      'lines': null,      // 清除所有線條
+      'images': null,     // 清除所有圖片
+      'drawings': null    // 清除其他繪圖數據
+    };
+    
+    // 更新 Firebase
+    set(roomRef, updates);
+    
+    // 清除本地狀態
+    setLines([]);
+    setImages([]);
+    setSelectedImage(null);
   }, [roomId]);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -416,7 +430,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     e.stopPropagation();
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, isUpload: boolean = false) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -427,25 +441,22 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         const imgData = event.target?.result as string;
         const imageId = Date.now().toString();
         
-        const img = new window.Image();
-        img.src = imgData;
-        img.onload = () => {
-          const newImage = {
-            id: imageId,
-            x: e.nativeEvent.offsetX || 100,
-            y: e.nativeEvent.offsetY || 100,
-            width: img.width,
-            height: img.height,
-            src: imgData,
-          };
-          
-          // 更新狀態以觸發重新渲染
-          setImages((prevImages) => [...prevImages, newImage]);
-
-          // 同步到 Firebase
-          const dbImageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-          set(dbImageRef, newImage);
+        // 根據來源決定位置
+        const position = isUpload ? {
+          x: window.innerWidth / 2 - 100,  // 畫面中心
+          y: window.innerHeight / 2 - 100
+        } : {
+          x: e.nativeEvent.offsetX,        // 拖放位置
+          y: e.nativeEvent.offsetY
         };
+
+        const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
+        set(imageRef, {
+          id: imageId,
+          x: position.x,
+          y: position.y,
+          src: imgData
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -525,7 +536,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const renderImages = useMemo(() => (
     images.map((image, i) => (
-      <React.Fragment key={i}>
+      <Group key={i}>
         <KonvaImage
           id={image.id}
           image={imageCache[image.src]}
@@ -551,13 +562,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             });
           }}
         />
+        
         {(selectedImage === image.id || dragMode) && (
-          <Group x={image.x + image.width - 20} y={image.y - 20}>
+          <Group 
+            x={image.x + image.width - 10}  // 調整位置到右上角
+            y={image.y - 10}
+            listening={true}
+          >
             <Circle
               radius={10}
               fill="red"
-              onClick={() => {
-                // 刪除圖片
+              stroke="white"
+              strokeWidth={2}
+              onClick={(e) => {
+                e.cancelBubble = true;
                 const imageRef = ref(database, `rooms/${roomId}/images/${image.id}`);
                 set(imageRef, null);
                 setSelectedImage(null);
@@ -567,11 +585,13 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               points={[-5, -5, 5, 5]}
               stroke="white"
               strokeWidth={2}
+              listening={false}
             />
             <KonvaLine
               points={[5, -5, -5, 5]}
               stroke="white"
               strokeWidth={2}
+              listening={false}
             />
           </Group>
         )}
@@ -622,9 +642,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             }}
           />
         )}
-      </React.Fragment>
+      </Group>
     ))
-  ), [images, imageCache, selectedImage, roomId]);
+  ), [images, imageCache, selectedImage, dragMode, roomId]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -679,7 +699,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const minHeight = 80; // 最小高度 (2列)
       const newHeight = Math.max(minHeight, Math.min(maxHeight, containerRect.bottom - moveEvent.clientY));
       
-      setChatHeight(newHeight + 80); // 加上頭部和輸入框的高度
+      setChatHeight(newHeight); // 加上頭部和輸入框的高度
     };
 
     const handleMouseUp = () => {
@@ -879,10 +899,46 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     setSelectedImage(imageId);
   }, []);
 
+  const handleToolbarDragStart = () => {
+    setIsDraggingToolbar(true);
+  };
+
+  const handleToolbarDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+    setIsDraggingToolbar(false);
+    
+    const { innerWidth, innerHeight } = window;
+    const { clientX, clientY } = e;
+    
+    if (clientX < innerWidth * 0.25) {
+      setToolbarPosition('left');
+    } else if (clientX > innerWidth * 0.75) {
+      setToolbarPosition('right');
+    } else if (clientY < innerHeight * 0.25) {
+      setToolbarPosition('top');
+    } else {
+      setToolbarPosition('bottom');
+    }
+  };
+
+  const getToolbarStyles = () => {
+    const baseStyles = "transition-all duration-300 bg-black bg-opacity-50 rounded-lg shadow-lg z-40";
+    
+    switch (toolbarPosition) {
+      case 'left':
+        return `fixed left-${isToolbarMinimized ? '0' : '4'} top-1/2 -translate-y-1/2 flex flex-col ${baseStyles}`;
+      case 'right':
+        return `fixed right-${isToolbarMinimized ? '0' : '4'} top-1/2 -translate-y-1/2 flex flex-col ${baseStyles}`;
+      case 'top':
+        return `fixed top-${isToolbarMinimized ? '-12' : '4'} left-1/2 -translate-x-1/2 flex flex-row ${baseStyles}`;
+      case 'bottom':
+        return `fixed bottom-${isToolbarMinimized ? '0' : '4'} right-4 flex flex-row ${baseStyles}`;
+    }
+  };
+
   return (
     <div 
       className="relative w-full h-screen"
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <Stage
@@ -922,71 +978,127 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         </Layer>
       </Stage>
 
-      {/* 功能按鈕 */}
-      <div className="fixed bottom-16 right-4 bg-black bg-opacity-50 rounded-lg shadow-lg">
+      {/* 右側工具列 */}
+      <div 
+        className={getToolbarStyles()}
+        draggable={true}
+        onDragStart={handleToolbarDragStart}
+        onDragEnd={handleToolbarDragEnd}
+        style={{ cursor: isDraggingToolbar ? 'grabbing' : 'grab' }}
+      >
         {/* 最小化按鈕 */}
-        <div className="p-2 border-b border-white border-opacity-20 flex justify-end">
+        <div className={`p-2 ${['top', 'bottom'].includes(toolbarPosition) ? 'border-r' : 'border-b'} border-white border-opacity-20`}>
           <button
             onClick={() => setIsToolbarMinimized(!isToolbarMinimized)}
-            className="text-white hover:text-gray-300"
+            className="text-white hover:text-gray-300 transition-colors"
+            title={isToolbarMinimized ? "展開工具列" : "收起工具列"}
           >
-            {isToolbarMinimized ? <AiOutlineRight /> : <AiOutlineLeft />}
+            {isToolbarMinimized ? (
+              <div className="w-8 h-8 flex items-center justify-center">
+                {toolbarPosition === 'right' && <AiOutlineLeft className="w-5 h-5" />}
+                {toolbarPosition === 'left' && <AiOutlineRight className="w-5 h-5" />}
+                {toolbarPosition === 'top' && <AiOutlineDown className="w-5 h-5" />}
+                {toolbarPosition === 'bottom' && <AiOutlineUp className="w-5 h-5" />}
+              </div>
+            ) : (
+              <div className="w-8 h-8 flex items-center justify-center">
+                {toolbarPosition === 'right' && <AiOutlineRight className="w-5 h-5" />}
+                {toolbarPosition === 'left' && <AiOutlineLeft className="w-5 h-5" />}
+                {toolbarPosition === 'top' && <AiOutlineUp className="w-5 h-5" />}
+                {toolbarPosition === 'bottom' && <AiOutlineDown className="w-5 h-5" />}
+              </div>
+            )}
           </button>
         </div>
 
         {/* 工具按鈕區域 */}
-        <div className={`flex flex-col gap-2 p-2 transition-all duration-200 ${
-          isToolbarMinimized ? 'w-0 overflow-hidden opacity-0' : 'w-auto opacity-100'
+        <div className={`transition-all duration-300 ${
+          isToolbarMinimized ? 'w-0 h-0 overflow-hidden opacity-0' : 'w-auto opacity-100 p-2'
         }`}>
-          <button
-            className="p-2 bg-white rounded-lg shadow hover:bg-gray-100"
-            onClick={zoomIn}
-            title="放大"
-          >
-            <BiZoomIn size={24} />
-          </button>
+          <div className={`flex ${['top', 'bottom'].includes(toolbarPosition) ? 'flex-row' : 'flex-col'} gap-2`}>
+            <button
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              onClick={zoomIn}
+              title="放大"
+            >
+              <BiZoomIn size={24} className="text-white" />
+            </button>
 
-          <button
-            className="p-2 bg-white rounded-lg shadow hover:bg-gray-100"
-            onClick={zoomOut}
-            title="縮小"
-          >
-            <BiZoomOut size={24} />
-          </button>
+            <button
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              onClick={zoomOut}
+              title="縮小"
+            >
+              <BiZoomOut size={24} className="text-white" />
+            </button>
 
-          <button
-            className="p-2 bg-white rounded-lg shadow hover:bg-gray-100"
-            onClick={resetZoom}
-            title="重置縮放"
-          >
-            <MdOutlineZoomOutMap size={24} />
-          </button>
+            <button
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              onClick={resetZoom}
+              title="重置縮放"
+            >
+              <MdOutlineZoomOutMap size={24} className="text-white" />
+            </button>
 
-          <button
-            className={`p-2 rounded-lg shadow ${
-              dragMode ? 'bg-blue-500 text-white' : 'bg-white hover:bg-gray-100'
-            }`}
-            onClick={() => setDragMode(!dragMode)}
-            title="拖曳模式"
-          >
-            <MdPanTool size={24} />
-          </button>
+            <button
+              className={`p-2 rounded-lg transition-colors ${
+                dragMode 
+                  ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              }`}
+              onClick={() => setDragMode(!dragMode)}
+              title="拖曳模式"
+            >
+              <MdPanTool size={24} />
+            </button>
 
-          <label 
-            htmlFor="imageUpload"
-            className="p-2 bg-white rounded-lg shadow hover:bg-gray-100 cursor-pointer"
-            title="上傳圖片"
-          >
-            <BiImageAdd size={24} />
-          </label>
+            <div
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors cursor-pointer"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDrop(e);
+              }}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = (e: Event) => {
+                  const target = e.target as HTMLInputElement;
+                  if (target?.files?.[0]) {
+                    const dt = new DataTransfer();
+                    dt.items.add(target.files[0]);
+                    const mockEvent = {
+                      preventDefault: () => {},
+                      stopPropagation: () => {},
+                      dataTransfer: dt,
+                      nativeEvent: {
+                        offsetX: 0,  // 這些值不會被使用
+                        offsetY: 0
+                      }
+                    } as React.DragEvent<HTMLDivElement>;
+                    
+                    handleDrop(mockEvent, true);  // 傳入 isUpload 標記
+                  }
+                };
+                input.click();
+              }}
+              title="上傳圖片（可拖放）"
+            >
+              <BiImageAdd size={24} className="text-white" />
+            </div>
 
-          <button
-            className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-            onClick={handleClearCanvas}
-            title="清除畫布"
-          >
-            <BiEraser size={24} />
-          </button>
+            <button
+              className="p-2 bg-red-500/50 hover:bg-red-500/70 text-white rounded-lg transition-colors"
+              onClick={handleClearCanvas}
+              title="清除畫布"
+            >
+              <BiEraser size={24} />
+            </button>
 
           <button
             className="p-2 bg-red-700 text-white rounded-lg hover:bg-red-800"
@@ -996,6 +1108,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             <BiTrash size={24} />
           </button>
         </div>
+      </div>
       </div>
 
       {/* 聊天室面板 */}
@@ -1128,9 +1241,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               className="overflow-y-auto px-2"
               style={{ height: `${roomInfoHeight - 70}px` }}
             >
-              <div className="py-2 border-b border-white border-opacity-20">
-                <span className="text-white text-sm">在線人數：{users.length}</span>
-              </div>
+              
               <div className="py-2">
                 <p className="text-white text-sm mb-1">在線成員：</p>
                 <ul className="space-y-1">
