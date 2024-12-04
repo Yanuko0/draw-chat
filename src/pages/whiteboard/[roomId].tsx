@@ -1,7 +1,11 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import Canvas from '../../components/Canvas';
+import dynamic from 'next/dynamic';
 import Toolbar from '../../components/Toolbar';
+
+const Canvas = dynamic(() => import('../../components/Canvas'), {
+  ssr: false
+});
 
 const WhiteboardPage = () => {
   const router = useRouter();
