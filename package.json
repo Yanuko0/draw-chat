@@ -10,7 +10,7 @@
     "server": "ts-node src/server/index.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
     "predeploy": "npm run build && touch docs/.nojekyll",
-    "deploy": "gh-pages -d docs" 
+    "deploy": "gh-pages -d docs"
   },
   "dependencies": {
     "@types/fabric": "^5.3.9",
