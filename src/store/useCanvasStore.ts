@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Tool = 'pencil' | 'pen' | 'brush' | 'marker' | 'eraser' | 'eyedropper' | 'fill' | 'select' | 'circle' | 'rectangle' | 'square' | 'star';
+export type Tool = 'pencil' | 'brush' | 'marker' | 'highlighter' | 'ink' | 'eraser' | 'select';
 
 interface CanvasStore {
   tool: Tool;

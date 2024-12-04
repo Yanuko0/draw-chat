@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useCanvasStore } from '../../store/useCanvasStore';
 import { database } from '../../config/firebase';
 import { ref, onValue, set, push, serverTimestamp } from 'firebase/database';
-import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash } from 'react-icons/bi';
+import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
 import debounce from 'lodash/debounce';
 import { AiOutlineDown, AiOutlineUp, AiOutlineLeft, AiOutlineRight } from 'react-icons/ai';
@@ -182,18 +182,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, [roomId, nickname]);
 
   const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
-    // 設備類型的基礎寬度調整係數
     const baseWidthMultiplier = {
-      mouse: 1.0,  // 降低滑鼠基礎寬度
-      touch: 1.5,  // 觸控適中
-      pen: 0.8     // 電繪板更精確
+      mouse: 1.0,
+      touch: 1.5,
+      pen: 0.8
     }[deviceType];
 
-    // 設備類型的張力調整
     const tensionAdjustment = {
       mouse: 0.1,
-      touch: 0.2,  // 觸控時降低張力使線條更平滑
-      pen: 0       // 電繪板保持原始張力
+      touch: 0.2,
+      pen: 0
     }[deviceType];
 
     switch (toolType) {
@@ -205,23 +203,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowColor: strokeColor,
-          shadowBlur: deviceType === 'touch' ? 0.4 : 0.2,
-          shadowOffsetX: 0.1,
-          shadowOffsetY: 0.1,
-          bezier: true
+          shadowBlur: 0.2
         };
-      case 'pen':
-        return {
-          tension: 0.5 - tensionAdjustment,
-          opacity: 0.95,
-          strokeWidth: strokeWidth * 1.2 * baseWidthMultiplier,
-          lineCap: 'round',
-          lineJoin: 'round',
-          shadowColor: strokeColor,
-          shadowBlur: deviceType === 'touch' ? 0.3 : 0.1,
-          bezier: true
-        };
+
       case 'brush':
         return {
           tension: 0.4 - tensionAdjustment,
@@ -229,10 +213,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           strokeWidth: strokeWidth * 2.0 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
-          shadowColor: strokeColor,
-          shadowBlur: deviceType === 'touch' ? 2.0 : 1.5,
-          bezier: true
+          globalCompositeOperation: 'source-over',
+          shadowBlur: 1.5
         };
+
       case 'marker':
         return {
           tension: 0.2 - tensionAdjustment,
@@ -240,10 +224,32 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           strokeWidth: strokeWidth * 2.5 * baseWidthMultiplier,
           lineCap: 'square',
           lineJoin: 'round',
-          shadowColor: strokeColor,
-          shadowBlur: 0,
-          bezier: false
+          globalCompositeOperation: 'multiply',
+          shadowBlur: 0
         };
+
+      case 'highlighter':
+        return {
+          tension: 0.1 - tensionAdjustment,
+          opacity: 0.3,
+          strokeWidth: strokeWidth * 3.0 * baseWidthMultiplier,
+          lineCap: 'square',
+          lineJoin: 'round',
+          globalCompositeOperation: 'multiply',
+          shadowBlur: 0
+        };
+
+      case 'ink':
+        return {
+          tension: 0.5 - tensionAdjustment,
+          opacity: 0.9,
+          strokeWidth: strokeWidth * 1.2 * baseWidthMultiplier,
+          lineCap: 'round',
+          lineJoin: 'round',
+          globalCompositeOperation: 'source-over',
+          shadowBlur: 0.3
+        };
+
       case 'eraser':
         return {
           tension: 0.3 - tensionAdjustment,
@@ -251,16 +257,19 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           strokeWidth: strokeWidth * 2.0 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
-          shadowBlur: 0,
-          bezier: true
+          globalCompositeOperation: 'destination-out',
+          shadowBlur: 0
         };
+
       default:
         return {
           tension: 0.4 - tensionAdjustment,
           opacity: 1,
           strokeWidth: strokeWidth * baseWidthMultiplier,
           lineCap: 'round',
-          lineJoin: 'round'
+          lineJoin: 'round',
+          globalCompositeOperation: 'source-over',
+          shadowBlur: 0
         };
     }
   };
@@ -388,49 +397,22 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     
     // 檢測設備類型和壓力值
     const deviceType = getDeviceType(e.evt);
-    const pressure = getPressure(e.evt);
+    const pressure = e.evt.pressure || 0.5;
     
-    // 計算點之間的距離
-    const dx = pos.x - lastPointerPosition.x;
-    const dy = pos.y - lastPointerPosition.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    // 如果距離太小，不添加新點
-    if (distance < 1) return;
-
-    // 在兩點之間插入額外的點以實現更平滑的線條
-    const numPoints = Math.ceil(distance / 2); // 每2個像素插入一個點
-    const newPoints = [];
-    
-    for (let i = 0; i <= numPoints; i++) {
-      const ratio = i / numPoints;
-      const x = lastPointerPosition.x + dx * ratio;
-      const y = lastPointerPosition.y + dy * ratio;
-      newPoints.push(x, y);
-    }
-
-    // 根據移動速度和壓力調整線條寬度
-    const speedFactor = Math.min(1, 1 / (distance + 1));
-    const pressureFactor = deviceType === 'pen' ? pressure : 0.8; // 降低非筆壓設備的壓力因子
-    const baseWidth = currentLine.strokeWidth;
-    
-    // 使用加權平均來平滑線條寬度的變化
-    const targetWidth = baseWidth * pressureFactor * (0.8 + speedFactor * 0.2);
-    const smoothingFactor = 0.7; // 增加平滑度
-    const adjustedWidth = baseWidth * (1 - smoothingFactor) + targetWidth * smoothingFactor;
-
+    // 更新線條點位
     const newLine = {
       ...currentLine,
-      points: [...currentLine.points, ...newPoints.slice(2)],
-      strokeWidth: adjustedWidth
+      points: [...currentLine.points, pos.x, pos.y], // 直接添加新點位
+      strokeWidth: currentLine.strokeWidth * (pressure * 0.5 + 0.5)
     };
     
     setCurrentLine(newLine);
     setLastPointerPosition({ x: pos.x, y: pos.y });
 
     // 使用防抖更新 Firebase
-    debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
-  }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length, scale]);
+    const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
+    set(roomRef, newLine);
+  }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length]);
 
   const handlePointerUp = useCallback((e: any) => {
     e.evt.preventDefault();
@@ -1071,6 +1053,30 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     return Math.max(ranges.min, Math.min(ranges.max, basePressure));
   };
 
+  const handleDownloadCanvas = () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    // 使用 Konva 的 toDataURL 方法
+    const dataURL = stage.toDataURL({
+      pixelRatio: window.devicePixelRatio || 1,
+      mimeType: 'image/png',
+      quality: 1,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      callback: (dataUrl: string) => {
+        // 創建下載連結
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        link.download = `canvas-${timestamp}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    });
+  };
+
   return (
     <div 
       className="relative w-full h-screen"
@@ -1288,6 +1294,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             title="清除全部"
           >
             <BiTrash size={24} />
+          </button>
+
+          <button
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+            onClick={handleDownloadCanvas}
+            title="下載畫布"
+          >
+            <BiDownload size={24} className="text-white" />
           </button>
         </div>
       </div>

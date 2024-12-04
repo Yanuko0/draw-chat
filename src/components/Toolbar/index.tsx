@@ -79,9 +79,10 @@ const Toolbar = () => {
                   value={tool === 'eraser' ? 'pencil' : tool}
                 >
                   <option className="bg-gray-800 text-white" value="pencil">鉛筆</option>
-                  <option className="bg-gray-800 text-white" value="pen">原子筆</option>
                   <option className="bg-gray-800 text-white" value="brush">毛筆</option>
                   <option className="bg-gray-800 text-white" value="marker">麥克筆</option>
+                  <option className="bg-gray-800 text-white" value="highlighter">螢光筆</option>
+                  <option className="bg-gray-800 text-white" value="ink">墨水筆</option>
                 </select>
 
                 <button
@@ -97,23 +98,40 @@ const Toolbar = () => {
               </div>
 
               {tool !== 'eraser' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={strokeColor}
-                    onChange={(e) => setStrokeColor(e.target.value)}
-                    className="w-8 h-8 cursor-pointer rounded border border-white/30"
-                  />
+                <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
                     <input
-                      type="range"
-                      min="1"
-                      max="50"
-                      value={strokeWidth}
-                      onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                      className="w-32"
+                      type="color"
+                      value={strokeColor}
+                      onChange={(e) => setStrokeColor(e.target.value)}
+                      className="w-8 h-8 cursor-pointer rounded border border-white/30"
                     />
-                    <span className="text-sm w-12 text-white">{strokeWidth}px</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="50"
+                        value={strokeWidth}
+                        onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                        className="w-32"
+                      />
+                      <span className="text-sm w-12 text-white">{strokeWidth}px</span>
+                    </div>
+                  </div>
+                  
+                  {/* 顯示當前工具的預覽 */}
+                  <div className="text-white text-xs opacity-70">
+                    目前使用: {
+                      {
+                        'pencil': '鉛筆',
+                        'brush': '毛筆',
+                        'marker': '麥克筆',
+                        'highlighter': '螢光筆',
+                        'ink': '墨水筆',
+                        'eraser': '橡皮擦',
+                        'select': '選擇'
+                      }[tool]
+                    }
                   </div>
                 </div>
               )}
