@@ -79,6 +79,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [isToolbarMinimized, setIsToolbarMinimized] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState<'right' | 'left' | 'top' | 'bottom'>('right');
   const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+  const [isPressing, setIsPressing] = useState(false);
+  const [lastPointerPosition, setLastPointerPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Firebase 監聽
   useEffect(() => {
@@ -264,35 +266,44 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     });
   };
 
-  const handleMouseDown = useCallback((e: any) => {
+  const handlePointerDown = useCallback((e: any) => {
+    e.evt.preventDefault();
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
-
+    
+    // 根據輸入類型設置壓力值
+    const pressure = e.evt.pointerType === 'mouse' 
+      ? 1.0  // 滑鼠使用固定壓力值
+      : (e.evt.pressure || 0.5); // 觸控筆才使用壓力感應
+    
     const isRightClick = e.evt.button === 2;
     const isMiddleClick = e.evt.button === 1;
     
     // 檢查是否點擊在圖片上
     const clickedOnImage = e.target.className === 'Image';
     
-    // 修改判斷條件
     if (isRightClick || isMiddleClick || e.evt.ctrlKey || e.evt.metaKey || dragMode) {
       setIsDragging(true);
       return;
     }
 
-    // 如果是在選擇模點擊圖片，不開始繪製
     if (tool === 'select' && clickedOnImage) {
       return;
     }
 
-    setIsDrawing(true);
+    setIsPressing(true);
+    setLastPointerPosition({ x: pos.x, y: pos.y });
+    
     const lineProps = getLineProperties(tool);
+    // 根據壓力值調整筆觸寬度
+    const adjustedStrokeWidth = lineProps.strokeWidth * (e.evt.pointerType === 'mouse' ? 1 : pressure * 1.5);
 
     const newLine: LineElement = {
       tool,
       points: [pos.x, pos.y],
       strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
-      ...lineProps
+      ...lineProps,
+      strokeWidth: adjustedStrokeWidth,
     };
 
     setCurrentLine(newLine);
@@ -301,7 +312,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     set(newLineRef, newLine);
   }, [tool, strokeColor, dragMode, roomId]);
 
-  const handleMouseMove = useCallback((e: any) => {
+  const handlePointerMove = useCallback((e: any) => {
+    e.evt.preventDefault();
+    
     if (isDragging) {
       const stage = e.target.getStage();
       setPosition({
@@ -311,30 +324,38 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       return;
     }
 
-    if (!isDrawing || !currentLine) return;
+    if (!isPressing || !currentLine || !lastPointerPosition) return;
 
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
+    const pressure = e.evt.pointerType === 'mouse'
+      ? 1.0  // 滑鼠使用固定壓力值
+      : (e.evt.pressure || 0.5);
+    
+    const adjustedStrokeWidth = currentLine.strokeWidth * (e.evt.pointerType === 'mouse' ? 1 : pressure * 1.5);
     
     const newLine = {
       ...currentLine,
-      points: [...currentLine.points, pos.x, pos.y]
+      points: [...currentLine.points, pos.x, pos.y],
+      strokeWidth: adjustedStrokeWidth
     };
     
     setCurrentLine(newLine);
+    setLastPointerPosition({ x: pos.x, y: pos.y });
     debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
-  }, [isDragging, isDrawing, currentLine, roomId, lines.length]);
+  }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length]);
 
-  const handleMouseUp = useCallback(() => {
-    setIsDrawing(false);
+  const handlePointerUp = useCallback((e: any) => {
+    e.evt.preventDefault();
+    setIsPressing(false);
     setIsDragging(false);
     setCurrentLine(null);
+    setLastPointerPosition(null);
 
     if (tool === 'select' && selectionStart) {
       const stage = stageRef.current;
       const pos = stage.getRelativePointerPosition();
       
-      // 獲取選擇區域內的元素
       const selected = lines.filter(line => {
         return line.points.some((point: number, i: number) => {
           if (i % 2 === 0) {
@@ -945,16 +966,19 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         ref={stageRef}
         width={window.innerWidth}
         height={window.innerHeight}
-        onMouseDown={handleMouseDown}
-        onMousemove={handleMouseMove}
-        onMouseup={handleMouseUp}
-        onMouseleave={handleMouseUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
         onWheel={handleWheel}
         scaleX={scale}
         scaleY={scale}
         x={position.x}
         y={position.y}
-        style={{ background: '#ffffff' }}
+        style={{ 
+          background: '#ffffff',
+          touchAction: 'none' // 防止觸控時的預設行為
+        }}
         onClick={handleStageClick}
       >
         <Layer>
