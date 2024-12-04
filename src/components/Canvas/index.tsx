@@ -711,7 +711,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     ))
   ), [images, imageCache, selectedImage, roomId]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = (e: React.FormEvent | React.KeyboardEvent) => {
     e.preventDefault();
     
     console.log('Attempting to send message:', {
@@ -728,7 +728,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         const newMessageRef = push(messagesRef);
         
         console.log('Setting message data');
-        await set(newMessageRef, {
+        set(newMessageRef, {
           nickname,
           text: newMessage.trim(),
           timestamp: serverTimestamp()
@@ -1429,6 +1429,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage(e);
+              }
+            }}
             placeholder="輸入訊息..."
             className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
