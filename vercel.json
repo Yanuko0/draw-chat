@@ -1,9 +1,5 @@
 {
   "buildCommand": "npm run build",
   "installCommand": "npm install --force",
-  "framework": "nextjs",
-  "buildEnvironment": {
-    "PYTHON": "python3",
-    "NODE_OPTIONS": "--max_old_space_size=4096"
-  }
-} 
+  "framework": "nextjs"
+}
