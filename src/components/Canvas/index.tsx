@@ -28,6 +28,7 @@ interface LineElement {
   tension?: number;
   opacity?: number;
   dash?: number[];
+  deviceType: 'mouse' | 'touch' | 'pen';
 }
 
 interface ImageElement {
@@ -180,54 +181,64 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
   }, [roomId, nickname]);
 
-  const getLineProperties = (toolType: string, isTouch: boolean = false) => {
-    // 觸控時的基礎寬度調整係數
-    const touchWidthMultiplier = isTouch ? 2.5 : 1; // 增加觸控時的寬度倍數
-    const touchTensionAdjustment = isTouch ? 0.2 : 0; // 觸控時降低張力以獲得更平滑的線條
-    
+  const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
+    // 設備類型的基礎寬度調整係數
+    const baseWidthMultiplier = {
+      mouse: 1.0,  // 降低滑鼠基礎寬度
+      touch: 1.5,  // 觸控適中
+      pen: 0.8     // 電繪板更精確
+    }[deviceType];
+
+    // 設備類型的張力調整
+    const tensionAdjustment = {
+      mouse: 0.1,
+      touch: 0.2,  // 觸控時降低張力使線條更平滑
+      pen: 0       // 電繪板保持原始張力
+    }[deviceType];
+
     switch (toolType) {
       case 'pencil':
         return {
-          tension: (isTouch ? 0.3 : 0.3) - touchTensionAdjustment,
-          opacity: 0.9,
-          strokeWidth: strokeWidth * 1.2 * touchWidthMultiplier, // 增加基礎寬度
+          tension: 0.3 - tensionAdjustment,
+          opacity: 0.85,
+          strokeWidth: strokeWidth * 0.8 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
           shadowColor: strokeColor,
-          shadowBlur: isTouch ? 0.8 : 0.5,
-          shadowOffsetX: 0.2,
-          shadowOffsetY: 0.2,
+          shadowBlur: deviceType === 'touch' ? 0.4 : 0.2,
+          shadowOffsetX: 0.1,
+          shadowOffsetY: 0.1,
           bezier: true
         };
       case 'pen':
         return {
-          tension: (isTouch ? 0.5 : 0.6) - touchTensionAdjustment,
-          opacity: 1,
-          strokeWidth: strokeWidth * 1.5 * touchWidthMultiplier,
+          tension: 0.5 - tensionAdjustment,
+          opacity: 0.95,
+          strokeWidth: strokeWidth * 1.2 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           shadowColor: strokeColor,
-          shadowBlur: isTouch ? 0.4 : 0.2,
+          shadowBlur: deviceType === 'touch' ? 0.3 : 0.1,
           bezier: true
         };
       case 'brush':
         return {
-          tension: (isTouch ? 0.3 : 0.4) - touchTensionAdjustment,
-          opacity: 0.7,
-          strokeWidth: strokeWidth * 2.5 * touchWidthMultiplier,
+          tension: 0.4 - tensionAdjustment,
+          opacity: 0.6,
+          strokeWidth: strokeWidth * 2.0 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           shadowColor: strokeColor,
-          shadowBlur: isTouch ? 2.5 : 2,
+          shadowBlur: deviceType === 'touch' ? 2.0 : 1.5,
           bezier: true
         };
       case 'marker':
         return {
-          tension: (isTouch ? 0.15 : 0.2) - touchTensionAdjustment,
-          opacity: 0.5,
-          strokeWidth: strokeWidth * 3 * touchWidthMultiplier,
-          lineCap: 'round',
+          tension: 0.2 - tensionAdjustment,
+          opacity: 0.4,
+          strokeWidth: strokeWidth * 2.5 * baseWidthMultiplier,
+          lineCap: 'square',
           lineJoin: 'round',
           shadowColor: strokeColor,
           shadowBlur: 0,
@@ -235,9 +246,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         };
       case 'eraser':
         return {
-          tension: (isTouch ? 0.2 : 0.3) - touchTensionAdjustment,
+          tension: 0.3 - tensionAdjustment,
           opacity: 1,
-          strokeWidth: strokeWidth * 2.5 * touchWidthMultiplier,
+          strokeWidth: strokeWidth * 2.0 * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           shadowBlur: 0,
@@ -245,9 +256,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         };
       default:
         return {
-          tension: 0.5 - touchTensionAdjustment,
+          tension: 0.4 - tensionAdjustment,
           opacity: 1,
-          strokeWidth: strokeWidth * touchWidthMultiplier,
+          strokeWidth: strokeWidth * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round'
         };
@@ -277,13 +288,42 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const handlePointerDown = useCallback((e: any) => {
     // 添加觸控事件的特定處理
 
-    const getPressure = (e: any) => {
-      if (e.evt.pointerType === 'pen') {
-        return e.evt.pressure || 0.5;
-      }
-      return e.evt.pointerType === 'touch' ? 1.5 : 1.0;
-    };
+    const getPressure = (evt: any): number => {
+      const deviceType = getDeviceType(evt);
+      const toolPressureRanges = {
+        pencil: {
+          mouse: { base: 0.5, min: 0.4, max: 0.6 },
+          touch: { base: 0.6, min: 0.5, max: 0.7 },
+          pen: { base: 0.4, min: 0.3, max: 0.5 }
+        },
+        pen: {
+          mouse: { base: 0.7, min: 0.6, max: 0.8 },
+          touch: { base: 0.8, min: 0.7, max: 0.9 },
+          pen: { base: 0.6, min: 0.4, max: 0.8 }
+        },
+        brush: {
+          mouse: { base: 0.6, min: 0.5, max: 0.7 },
+          touch: { base: 0.7, min: 0.6, max: 0.8 },
+          pen: { base: 0.5, min: 0.3, max: 0.7 }
+        },
+        marker: {
+          mouse: { base: 0.8, min: 0.7, max: 0.9 },
+          touch: { base: 0.9, min: 0.8, max: 1.0 },
+          pen: { base: 0.7, min: 0.6, max: 0.8 }
+        },
+        eraser: {
+          mouse: { base: 0.7, min: 0.6, max: 0.8 },
+          touch: { base: 0.8, min: 0.7, max: 0.9 },
+          pen: { base: 0.6, min: 0.5, max: 0.7 }
+        }
+      };
 
+      const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] || 
+                    toolPressureRanges.pencil[deviceType];
+
+      const basePressure = evt.pressure || ranges.base;
+      return Math.max(ranges.min, Math.min(ranges.max, basePressure));
+    };
 
     if (e.evt.pointerType === 'pen') {
       e.evt.preventDefault();
@@ -294,16 +334,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const pos = stage.getRelativePointerPosition();
     
     // 檢測設備類型
-    const isTouch = e.evt.pointerType === 'touch';
-    const isPen = e.evt.pointerType === 'pen';
+    const deviceType = getDeviceType(e.evt);
     
     // 獲取壓力值
-    const pressure = getPressure(e);
-    
-    // 根據設備類型調整基礎壓力值
-    const basePressure = isTouch ? 1.5 : // 觸控時使用較大的基礎壓力
-                          isPen ? pressure : // 觸控筆使用實際壓力
-                          1.0; // 滑鼠使用固定壓力
+    const pressure = getPressure(e.evt);
     
     const isRightClick = e.evt.button === 2;
     const isMiddleClick = e.evt.button === 1;
@@ -317,15 +351,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     setLastPointerPosition({ x: pos.x, y: pos.y });
     
     // 將觸控狀態和壓力值傳遞給 getLineProperties
-    const lineProps = getLineProperties(tool, isTouch);
-    const adjustedStrokeWidth = lineProps.strokeWidth * basePressure;
+    const lineProps = getLineProperties(tool, deviceType);
+    const adjustedStrokeWidth = lineProps.strokeWidth * pressure * 0.5; // 進一步降低初始筆觸寬度
 
     const newLine: LineElement = {
       tool,
       points: [pos.x, pos.y],
       strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
       ...lineProps,
-      strokeWidth: adjustedStrokeWidth
+      strokeWidth: adjustedStrokeWidth,
+      deviceType: deviceType
     };
 
     setCurrentLine(newLine);
@@ -352,35 +387,48 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const pos = stage.getRelativePointerPosition();
     
     // 檢測設備類型和壓力值
-    const isTouch = e.evt.pointerType === 'touch';
-    const isPen = e.evt.pointerType === 'pen';
-    const pressure = e.evt.pressure || 
-                    e.evt.force || 
-                    e.evt.webkitForce || 
-                    (isPen ? 0.5 : 1);
-    
-    // 根據設備類型調整基礎壓力值
-    const basePressure = isTouch ? 1.5 : // 觸控時使用較大的基礎壓力
-                          isPen ? pressure : // 觸控筆使用實際壓力
-                          1.0; // 滑鼠使用固定壓力
+    const deviceType = getDeviceType(e.evt);
+    const pressure = getPressure(e.evt);
     
     // 計算點之間的距離
     const dx = pos.x - lastPointerPosition.x;
     const dy = pos.y - lastPointerPosition.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
+    // 如果距離太小，不添加新點
+    if (distance < 1) return;
+
+    // 在兩點之間插入額外的點以實現更平滑的線條
+    const numPoints = Math.ceil(distance / 2); // 每2個像素插入一個點
+    const newPoints = [];
+    
+    for (let i = 0; i <= numPoints; i++) {
+      const ratio = i / numPoints;
+      const x = lastPointerPosition.x + dx * ratio;
+      const y = lastPointerPosition.y + dy * ratio;
+      newPoints.push(x, y);
+    }
+
     // 根據移動速度和壓力調整線條寬度
     const speedFactor = Math.min(1, 1 / (distance + 1));
-    const adjustedWidth = currentLine.strokeWidth * basePressure * (0.5 + speedFactor * 0.5);
+    const pressureFactor = deviceType === 'pen' ? pressure : 0.8; // 降低非筆壓設備的壓力因子
+    const baseWidth = currentLine.strokeWidth;
+    
+    // 使用加權平均來平滑線條寬度的變化
+    const targetWidth = baseWidth * pressureFactor * (0.8 + speedFactor * 0.2);
+    const smoothingFactor = 0.7; // 增加平滑度
+    const adjustedWidth = baseWidth * (1 - smoothingFactor) + targetWidth * smoothingFactor;
 
     const newLine = {
       ...currentLine,
-      points: [...currentLine.points, pos.x, pos.y],
+      points: [...currentLine.points, ...newPoints.slice(2)],
       strokeWidth: adjustedWidth
     };
     
     setCurrentLine(newLine);
     setLastPointerPosition({ x: pos.x, y: pos.y });
+
+    // 使用防抖更新 Firebase
     debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
   }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length, scale]);
 
@@ -557,7 +605,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     debounce((path: string, data: any) => {
       const dbRef = ref(database, path);
       set(dbRef, data);
-    }, 30),
+    }, 8.33),  // 降低延遲時間到 16ms (約60fps)
     []
   );
 
@@ -976,6 +1024,51 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-[-1rem]'
       }`;
     }
+  };
+
+  // 輔助函數：判斷設備類型
+  const getDeviceType = (evt: any): 'mouse' | 'touch' | 'pen' => {
+    if (evt.pointerType === 'pen') return 'pen';
+    if (evt.pointerType === 'touch') return 'touch';
+    return 'mouse';
+  };
+
+  // 輔助函數：獲取壓力值
+  const getPressure = (evt: any): number => {
+    const deviceType = getDeviceType(evt);
+    const toolPressureRanges = {
+      pencil: {
+        mouse: { base: 0.5, min: 0.4, max: 0.6 },
+        touch: { base: 0.6, min: 0.5, max: 0.7 },
+        pen: { base: 0.4, min: 0.3, max: 0.5 }
+      },
+      pen: {
+        mouse: { base: 0.7, min: 0.6, max: 0.8 },
+        touch: { base: 0.8, min: 0.7, max: 0.9 },
+        pen: { base: 0.6, min: 0.4, max: 0.8 }
+      },
+      brush: {
+        mouse: { base: 0.6, min: 0.5, max: 0.7 },
+        touch: { base: 0.7, min: 0.6, max: 0.8 },
+        pen: { base: 0.5, min: 0.3, max: 0.7 }
+      },
+      marker: {
+        mouse: { base: 0.8, min: 0.7, max: 0.9 },
+        touch: { base: 0.9, min: 0.8, max: 1.0 },
+        pen: { base: 0.7, min: 0.6, max: 0.8 }
+      },
+      eraser: {
+        mouse: { base: 0.7, min: 0.6, max: 0.8 },
+        touch: { base: 0.8, min: 0.7, max: 0.9 },
+        pen: { base: 0.6, min: 0.5, max: 0.7 }
+      }
+    };
+
+    const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] || 
+                  toolPressureRanges.pencil[deviceType];
+
+    const basePressure = evt.pressure || ranges.base;
+    return Math.max(ranges.min, Math.min(ranges.max, basePressure));
   };
 
   return (
