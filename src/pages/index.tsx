@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { database } from '../config/firebase';
 import { ref, get, onValue, set } from 'firebase/database';
@@ -24,36 +24,81 @@ const Home = () => {
   const [passwordError, setPasswordError] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const router = useRouter();
+  const roomTimers = useRef<TimerMap>({});
 
   useEffect(() => {
+    console.log('Starting rooms listener');
+    
     const roomsRef = ref(database, 'rooms');
+    console.log('Listening to:', roomsRef.toString());
 
     const unsubscribe = onValue(roomsRef, (snapshot) => {
+      console.log('Got snapshot, exists:', snapshot.exists());
       const data = snapshot.val();
+      console.log('Raw rooms data:', JSON.stringify(data, null, 2));
+      
       if (data) {
-        const roomList = Object.entries(data).map(async ([id, room]: [string, any]) => {
+        const roomList = Object.entries(data).map(([id, room]: [string, any]) => {
+          console.log('Processing room:', id, room);
           const userCount = room.users ? Object.keys(room.users).length : 0;
+          console.log('Room user count:', userCount);
           
-          // 如果房間沒有人，直接刪除
-          if (userCount === 0) {
-            await set(ref(database, `rooms/${id}`), null);
+          // 清除該房間之前的計時器（如果存在）
+          if (roomTimers.current[id]) {
+            clearTimeout(roomTimers.current[id]);
+            delete roomTimers.current[id];
           }
 
-          return {
+          // 如果房間沒有人，開始計時
+          if (userCount === 0) {
+            console.log(`Room ${id} is empty, starting 30s timer`);
+            roomTimers.current[id] = setTimeout(async () => {
+              console.log(`Deleting empty room ${id}`);
+              try {
+                await set(ref(database, `rooms/${id}`), null);
+                console.log(`Room ${id} deleted successfully`);
+              } catch (error) {
+                console.error(`Error deleting room ${id}:`, error);
+              }
+            }, 30000); // 30 秒
+          }
+
+          const roomData = {
             id,
             name: id,
             isEncrypted: room.config?.isEncrypted || false,
             userCount
           };
+          console.log('Processed room data:', roomData);
+          return roomData;
         });
         
-        // 等待所有操作完成後更新狀態
-        Promise.all(roomList).then(setRooms);
+        console.log('Setting rooms state with:', roomList);
+        setRooms(roomList);
+      } else {
+        console.log('No data, setting empty rooms array');
+        setRooms([]);
       }
+    }, (error) => {
+      console.error('Firebase error:', error);
     });
 
-    return () => unsubscribe();
+    // 添加一個立即檢查當前 rooms 狀態的功能
+    setTimeout(() => {
+      console.log('Current rooms state:', rooms);
+    }, 1000);
+
+    return () => {
+      console.log('Cleaning up rooms listener');
+      unsubscribe();
+      // 清除所有計時器
+      Object.values(roomTimers.current).forEach(timer => clearTimeout(timer));
+      roomTimers.current = {};
+    };
   }, []);
+
+  // 在 return 之前添加一個檢查
+  console.log('Rendering with rooms:', rooms);
 
   const validatePassword = (pass: string) => {
     const regex = /^[A-Za-z0-9]{8,16}$/;
@@ -89,24 +134,21 @@ const Home = () => {
         return;
       }
 
-      // 創建房間時保存加密狀態和密碼
-      if (isEncrypted) {
-        await set(ref(database, `rooms/${roomName}/config`), {
-          isEncrypted: true,
-          password: password
-        });
-      }
+      // 先創建房間的配置
+      await set(ref(database, `rooms/${roomName}/config`), {
+        isEncrypted: isEncrypted,
+        password: isEncrypted ? password : null
+      });
 
-      // 添加用戶到房間
+      // 再添加用戶
       await set(ref(database, `rooms/${roomName}/users/${nickname}`), true);
 
-      // 修改這裡：使用 query 參數傳遞暱稱
       router.push({
         pathname: `/whiteboard/${roomName}`,
         query: { nickname }
       });
     } catch (err) {
-      setError('檢查房間時發生錯誤，請稍後再試');
+      setError('創建房間時發生錯誤，請稍後再試');
     }
   };
 
@@ -121,34 +163,48 @@ const Home = () => {
     }
 
     try {
-      const exists = await checkRoomExists(roomName);
-      if (!exists) {
+      const roomRef = ref(database, `rooms/${roomName}`);
+      const snapshot = await get(roomRef);
+      
+      if (!snapshot.exists()) {
         setError('此房間不存在，請確認房間名稱或建立新房間');
         return;
       }
 
-      // 檢查房間是否需要密碼
+      // 先檢查房間是否需要密碼
       const roomConfigRef = ref(database, `rooms/${roomName}/config`);
       const configSnapshot = await get(roomConfigRef);
       const roomConfig = configSnapshot.val();
+      
+      console.log('Room config:', roomConfig);
 
       if (roomConfig?.isEncrypted) {
+        console.log('Room is encrypted');
+        setIsEncrypted(true);
+        
         if (!password) {
-          setPasswordError('此房間需要密碼');
+          console.log('Password required');
+          setPasswordError('此房間需要密碼才能加入');
           return;
         }
+        
         if (password !== roomConfig.password) {
+          console.log('Wrong password');
           setPasswordError('密碼錯誤');
+          setPassword('');
           return;
         }
       }
 
-      // 修改這裡：使用 query 參數傳遞暱稱
+      // 密碼正確或非加密房間才能繼續
+      await set(ref(database, `rooms/${roomName}/users/${nickname}`), true);
+
       router.push({
         pathname: `/whiteboard/${roomName}`,
         query: { nickname }
       });
     } catch (err) {
+      console.error('Error:', err);
       setError('檢查房間時發生錯誤，請稍後再試');
     }
   };
@@ -159,19 +215,49 @@ const Home = () => {
     return snapshot.exists();
   };
 
+  // 添加點擊房間的處理函數
+  const handleRoomClick = async (roomId: string, isEncrypted: boolean) => {
+    setRoomName(roomId);
+    setError('');
+    setPasswordError('');
+    
+    if (isEncrypted) {
+      setIsEncrypted(true);
+      setPasswordError('此房間需要密碼才能加入');
+    } else {
+      setIsEncrypted(false);
+      setPassword('');
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 relative">
       {/* 已建房間列表 */}
       <div className="absolute top-4 right-4 w-80 bg-black bg-opacity-50 rounded-lg shadow-lg p-4">
-        <h3 className="text-white text-lg font-medium mb-2">已建房間</h3>
+        <h3 className="text-white text-lg font-medium mb-2">
+          已建房間 ({rooms?.length || 0})
+        </h3>
         <ul className="space-y-2">
-          {rooms.map((room) => (
-            <li key={room.id} className="flex justify-between items-center text-white text-sm">
-              <span>{room.name}</span>
-              <span>{room.isEncrypted ? <AiOutlineLock /> : <AiOutlineUnlock />}</span>
-              <span>{room.userCount} 人</span>
-            </li>
-          ))}
+          {rooms && rooms.length > 0 ? (
+            rooms.map((room) => (
+              <li 
+                key={room.id} 
+                className="flex justify-between items-center text-white text-sm p-2 hover:bg-white/10 rounded cursor-pointer" 
+                onClick={() => handleRoomClick(room.name, room.isEncrypted)}
+              >
+                <span className="flex-1">{room.name}</span>
+                <span className="mx-2">
+                  {room.isEncrypted ? 
+                    <AiOutlineLock className="text-yellow-500" /> : 
+                    <AiOutlineUnlock className="text-green-500" />
+                  }
+                </span>
+                <span>{room.userCount} 人</span>
+              </li>
+            ))
+          ) : (
+            <li className="text-white text-sm text-center">目前沒有房間</li>
+          )}
         </ul>
       </div>
 
