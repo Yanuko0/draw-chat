@@ -86,6 +86,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [showDeleteButton, setShowDeleteButton] = useState<string | null>(null);
   const [isChatHidden, setIsChatHidden] = useState(false);
   const [startX, setStartX] = useState<number | null>(null);
+  const [history, setHistory] = useState<LineElement[][]>([]);
+  const [currentStep, setCurrentStep] = useState(-1);
 
   // Firebase 監聽
   useEffect(() => {
@@ -1076,6 +1078,80 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       }
     });
   };
+
+  const handleUndo = useCallback(() => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+      setLines(history[currentStep - 1]);
+      // 同步到 Firebase
+      const roomRef = ref(database, `rooms/${roomId}/lines`);
+      set(roomRef, history[currentStep - 1]);
+    }
+  }, [currentStep, history, roomId]);
+
+  const handleRedo = useCallback(() => {
+    if (currentStep < history.length - 1) {
+      setCurrentStep(prev => prev + 1);
+      setLines(history[currentStep + 1]);
+      // 同步到 Firebase
+      const roomRef = ref(database, `rooms/${roomId}/lines`);
+      set(roomRef, history[currentStep + 1]);
+    }
+  }, [currentStep, history, roomId]);
+
+  // 添加快捷鍵支持
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // 添加兩指縮放功能
+  useEffect(() => {
+    let lastDistance = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        lastDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const distance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+
+        const scaleChange = distance / lastDistance;
+        const newScale = scale * scaleChange;
+        setScale(Math.min(Math.max(0.1, newScale), 5));
+
+        lastDistance = distance;
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouchStart);
+    document.addEventListener('touchmove', handleTouchMove);
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [scale]);
 
   return (
     <div 
