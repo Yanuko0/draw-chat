@@ -267,4 +267,12 @@ const Home = () => {
   );
 };
 
+// 添加 getStaticProps
+export async function getStaticProps() {
+  return {
+    props: {}
+  };
+}
+
+
 export default Home;
