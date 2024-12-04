@@ -396,9 +396,19 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   // 添加清除全部功能
   const handleClearAll = useCallback(() => {
-    const roomRef = ref(database, `rooms/${roomId}`);
-    set(roomRef, null); // 清除該房間的所有數據
-    setSelectedImage(null); // 重置選中圖片
+    // 清除所有圖層
+    const stage = stageRef.current;
+    if (stage) {
+      const layers = stage.getLayers();
+      layers.forEach((layer: Konva.Layer) => {
+        layer.removeChildren();
+        layer.batchDraw();
+      });
+      
+      // 更新資料庫
+      const roomRef = ref(database, `rooms/${roomId}/drawings`);
+      set(roomRef, null);
+    }
   }, [roomId]);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -858,6 +868,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
   };
 
+  const handleStageClick = useCallback((e: KonvaEventObject<MouseEvent>) => {
+    // 檢查點擊的是否為舞台本身
+    if (e.target === e.target.getStage()) {
+      setSelectedImage(null);
+    }
+  }, []);
+
+  const handleImageDblClick = useCallback((imageId: string) => {
+    setSelectedImage(imageId);
+  }, []);
+
   return (
     <div 
       className="relative w-full h-screen"
@@ -878,6 +899,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         x={position.x}
         y={position.y}
         style={{ background: '#ffffff' }}
+        onClick={handleStageClick}
       >
         <Layer>
           {renderImages}
