@@ -19,8 +19,9 @@ const Toolbar = () => {
   };
 
   return (
-    <div className={`fixed top-4 left-4 z-50 bg-black bg-opacity-50 rounded-lg shadow-lg transition-all duration-300 ${
-      isToolbarMinimized ? 'w-12' : 'w-auto'
+    <div className={`fixed top-2 left-2 z-50 bg-black/50 backdrop-blur-sm rounded-lg shadow-lg 
+                     transition-all duration-300 border border-white/10 ${
+      isToolbarMinimized ? 'w-12' : 'w-[245px]'
     }`}>
       {isToolbarMinimized ? (
         // 縮小狀態
@@ -28,18 +29,18 @@ const Toolbar = () => {
           <div className="flex flex-col items-center gap-2">
             <button
               onClick={() => setIsToolbarMinimized(false)}
-              className="p-1 hover:bg-white/20 rounded transition-colors"
+              className="p-1.5 hover:bg-white/20 rounded-md transition-colors"
               title={t.toolbar.expand}
             >
-              <AiOutlineRight className="w-4 h-4 text-white" />
+              <AiOutlineRight size={20} className="text-white" />
             </button>
 
             {/* 工具選擇按鈕 */}
             <div className="flex flex-col gap-2">
               <button
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all ${
                   tool !== 'eraser' 
-                    ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                    ? 'bg-white text-gray-800 hover:bg-gray-100 shadow-md' 
                     : 'bg-white/20 hover:bg-white/30 text-white'
                 }`}
                 onClick={() => handleToolChange('pencil')}
@@ -49,9 +50,9 @@ const Toolbar = () => {
               </button>
 
               <button
-                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                className={`w-8 h-8 rounded-md flex items-center justify-center transition-all ${
                   tool === 'eraser' 
-                    ? 'bg-white text-gray-800 hover:bg-gray-100' 
+                    ? 'bg-white text-gray-800 hover:bg-gray-100 shadow-md' 
                     : 'bg-white/20 hover:bg-white/30 text-white'
                 }`}
                 onClick={() => handleToolChange('eraser')}
@@ -64,7 +65,7 @@ const Toolbar = () => {
             {/* 顯示當前顏色 */}
             {tool !== 'eraser' && (
               <div 
-                className="w-6 h-6 rounded-full border border-white/30 shadow-sm"
+                className="w-6 h-6 rounded-full border border-white/30 shadow-md"
                 style={{ backgroundColor: strokeColor }}
                 title={t.toolbar.currentColor}
               />
@@ -73,48 +74,41 @@ const Toolbar = () => {
         </div>
       ) : (
         // 展開狀態
-        <div className="p-2 md:p-4">
+        <div className="p-3 md:p-4">
           <div className="flex justify-between items-start">
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-2">
                 {tool !== 'eraser' ? (
                   <select
-                    className="px-2 md:px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-white text-sm transition-colors"
+                    className="px-3 py-2 bg-white/20 rounded-md hover:bg-white/30 
+                               text-white text-sm transition-all shadow-sm
+                               border border-white/20 focus:outline-none focus:border-white/50
+                               [&>option]:text-gray-800 [&>option]:bg-white"
                     onChange={(e) => handleToolChange(e.target.value as Tool)}
                     value={tool}
                   >
-                    <option className="bg-gray-800 text-white flex items-center gap-2" value="pencil">
-                      <div className="flex items-center gap-2">
-                        <BsPencilFill className="w-4 h-4" /> 鉛筆
-                      </div>
+                    <option value="pencil">
+                      <BsPencilFill className="w-4 h-4" /> {t.toolbar.tools.pencil}
                     </option>
-                    <option className="bg-gray-800 text-white" value="brush">
-                      <div className="flex items-center gap-2">
-                        <FaPaintBrush className="w-4 h-4" /> 毛筆
-                      </div>
+                    <option value="brush">
+                      <FaPaintBrush className="w-4 h-4" /> {t.toolbar.tools.brush}
                     </option>
-                    <option className="bg-gray-800 text-white" value="marker">
-                      <div className="flex items-center gap-2">
-                        <MdBrush className="w-4 h-4" /> 麥克筆
-                      </div>
+                    <option value="marker">
+                      <MdBrush className="w-4 h-4" /> {t.toolbar.tools.marker}
                     </option>
-                    <option className="bg-gray-800 text-white" value="highlighter">
-                      <div className="flex items-center gap-2">
-                        <FaHighlighter className="w-4 h-4" /> 螢光筆
-                      </div>
+                    <option value="highlighter">
+                      <FaHighlighter className="w-4 h-4" /> {t.toolbar.tools.highlighter}
                     </option>
-                    <option className="bg-gray-800 text-white" value="ink">
-                      <div className="flex items-center gap-2">
-                        <FaPen className="w-4 h-4" /> 墨水筆
-                      </div>
+                    <option value="ink">
+                      <FaPen className="w-4 h-4" /> {t.toolbar.tools.ink}
                     </option>
                   </select>
                 ) : (
-                  <span className="px-2 md:px-4 py-2 text-white text-sm">橡皮擦</span>
+                  <span className="px-3 py-2 text-white text-sm">{t.toolbar.tools.eraser}</span>
                 )}
 
                 <button
-                  className={`px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors ${
+                  className={`px-3 py-2 rounded-md flex items-center gap-2 text-sm transition-all shadow-sm ${
                     tool === 'eraser' 
                       ? 'bg-white text-gray-800 hover:bg-gray-100' 
                       : 'bg-white/20 hover:bg-white/30 text-white'
@@ -125,14 +119,14 @@ const Toolbar = () => {
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {tool !== 'eraser' && (
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={strokeColor}
                       onChange={(e) => setStrokeColor(e.target.value)}
-                      className="w-8 h-8 cursor-pointer rounded border border-white/30"
+                      className="w-8 h-8 cursor-pointer rounded-md border border-white/30 shadow-sm"
                     />
                   </div>
                 )}
@@ -144,35 +138,25 @@ const Toolbar = () => {
                     max="50"
                     value={strokeWidth}
                     onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                    className="w-32"
+                    className="w-32 accent-white"
                   />
-                  <span className="text-sm w-12 text-white">
-                    {strokeWidth}px
+                  <span className="text-sm text-white min-w-[3rem]">
+                    {strokeWidth}{t.toolbar.strokeWidth}
                   </span>
                 </div>
                 
-                <div className="text-white text-xs opacity-70">
-                  {t.toolbar.currentTool}: {
-                    {
-                      'pencil': '鉛筆',
-                      'brush': '毛筆',
-                      'marker': '麥克筆',
-                      'highlighter': '螢光筆',
-                      'ink': '墨水筆',
-                      'eraser': '橡皮擦',
-                      'select': '選擇'
-                    }[tool]
-                  }
+                <div className="text-white/70 text-xs">
+                  {t.toolbar.currentTool}: {t.toolbar.tools[tool as keyof typeof t.toolbar.tools]}
                 </div>
               </div>
             </div>
 
             <button
               onClick={() => setIsToolbarMinimized(true)}
-              className="ml-4 p-1 hover:bg-white/20 rounded transition-colors"
+              className="ml-0 p-1.5 hover:bg-white/20 rounded-md transition-colors"
               title={t.toolbar.collapse}
             >
-              <AiOutlineLeft className="w-4 h-4 text-white" />
+              <AiOutlineLeft size={20} className="text-white" />
             </button>
           </div>
         </div>

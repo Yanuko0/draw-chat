@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useLayoutEffect } from 'react';
 import { auth, database } from '../config/firebase';
 import { ref, set } from 'firebase/database';
 
@@ -63,6 +63,11 @@ interface TranslationType {
     readonly currentColor: string;
     readonly currentTool: string;
     readonly strokeWidth: string;
+  };
+  readonly roomInfo: {
+    readonly roomName: string;
+    readonly userCount: string;
+    readonly onlineMembers: string;
   };
 }
 
@@ -136,6 +141,11 @@ export const translations = {
       currentColor: '當前顏色',
       currentTool: '目前使用',
       strokeWidth: 'px'
+    },
+    roomInfo: {
+      roomName: '房間名',
+      userCount: '人數',
+      onlineMembers: '在線成員'
     }
   },
   'en': {
@@ -201,6 +211,11 @@ export const translations = {
       currentColor: 'Current Color',
       currentTool: 'Current Tool',
       strokeWidth: 'px'
+    },
+    roomInfo: {
+      roomName: 'Room Name',
+      userCount: 'Users',
+      onlineMembers: 'Online Members'
     }
   },
   'ja': {
@@ -266,47 +281,52 @@ export const translations = {
       currentColor: '現在の色',
       currentTool: '現在のツール',
       strokeWidth: 'px'
+    },
+    roomInfo: {
+      roomName: 'ルーム名',
+      userCount: '人数',
+      onlineMembers: 'オンラインメンバー'
     }
   }
 } as const;
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [currentLang, setCurrentLang] = useState<Language>(() => {
-    // 檢查是否在客戶端
-    if (typeof window !== 'undefined') {
-      const savedLang = localStorage.getItem('preferredLanguage');
-      return (savedLang as Language) || 'zh-TW';
-    }
-    return 'zh-TW';
-  });
+export const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
+  const [currentLang, setCurrentLang] = useState<Language>('zh-TW');
+  const [isClient, setIsClient] = useState(false);
 
-  const handleLanguageChange = (newLang: Language) => {
-    setCurrentLang(newLang);
-    // 檢查是否在客戶端
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('preferredLanguage', newLang);
+  useLayoutEffect(() => {
+    const savedLang = localStorage.getItem('preferredLanguage');
+    if (savedLang) {
+      setCurrentLang(savedLang as Language);
     }
-    
-    const user = auth.currentUser;
-    if (user) {
-      set(ref(database, `users/${user.uid}/preferences/language`), newLang);
-    }
+    setIsClient(true);
+  }, []);
+
+  const value = {
+    currentLang,
+    setCurrentLang: (lang: Language) => {
+      setCurrentLang(lang);
+      localStorage.setItem('preferredLanguage', lang);
+    },
+    t: translations[currentLang],
   };
 
-  const t = translations[currentLang];
+  if (!isClient) {
+    return (
+      <LanguageContext.Provider value={value}>
+        {children}
+      </LanguageContext.Provider>
+    );
+  }
 
   return (
-    <LanguageContext.Provider value={{ 
-      currentLang, 
-      setCurrentLang: handleLanguageChange, 
-      t 
-    }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );
-}
+};
 
 export function useLanguage() {
   const context = useContext(LanguageContext);

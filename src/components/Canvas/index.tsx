@@ -8,13 +8,15 @@ import { ref, onValue, set, push, serverTimestamp, get } from 'firebase/database
 import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload, BiUndo, BiRedo } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
 import debounce from 'lodash/debounce';
-import { AiOutlineDown, AiOutlineUp, AiOutlineLeft, AiOutlineRight } from 'react-icons/ai';
+import { AiOutlineDown, AiOutlineUp, AiOutlineLeft, AiOutlineRight, AiOutlineMinus, AiOutlinePlus } from 'react-icons/ai';
 import { KonvaEventObject } from 'konva/lib/Node';
 import { Canvas as FabricCanvas } from 'fabric';
 import * as fabric from 'fabric';
 import StickerPicker from '../../components/StickerPicker';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
+import { IoSend } from 'react-icons/io5';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 interface CanvasProps {
   roomId: string;
@@ -59,6 +61,7 @@ interface LineWithUser extends LineElement {
 }
 
 const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
+  const { t } = useLanguage();
   const [lines, setLines] = useState<LineWithUser[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -82,7 +85,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [selectedElements, setSelectedElements] = useState<any[]>([]);
   const [isDraggingSelection, setIsDraggingSelection] = useState(false);
   const fabricRef = useRef<FabricCanvas | null>(null);
-  const [isToolbarMinimized, setIsToolbarMinimized] = useState(false);
+  const [isToolbarMinimized, setIsToolbarMinimized] = useState(true);
   const [toolbarPosition, setToolbarPosition] = useState<'right' | 'left' | 'top' | 'bottom'>('right');
   const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
@@ -332,6 +335,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const deviceType = getDeviceType(evt);
       if (deviceType === 'mouse') {  // 只針對滑鼠修改
         return 1;  // 給滑鼠一個固定較高的壓力值
+      }
+      
+      if (deviceType === 'touch') {
+        return 0.9;  // 給手機觸控一個固定較高的壓力值
       }
       
       // 其他設備保持原邏輯
@@ -879,42 +886,63 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const imgData = event.target?.result as string;
-        // @ts-ignore
-        fabric.Image.fromURL(imgData, {
-          crossOrigin: 'anonymous'
-        }, (img: fabric.Image) => {
+        
+        // 檢查是否為移動設備
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+          // 移動設備的處理邏輯
           const imageId = Date.now().toString();
-          const pointer = {
-            x: (e.nativeEvent as MouseEvent).offsetX || 100,
-            y: (e.nativeEvent as MouseEvent).offsetY || 100
-          };
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
           
-          img.set({
-            left: pointer.x,
-            top: pointer.y,
-            cornerColor: 'blue',
-            cornerStrokeColor: 'blue',
-            cornerSize: 12,
-            transparentCorners: false,
-            borderColor: 'blue',
-            borderScaleFactor: 2,
-            padding: 5,
-            data: { id: imageId, src: imgData }
-          });
+          fabric.Image.fromURL(
+            imgData, 
+            { crossOrigin: 'anonymous' },
+            (img: fabric.FabricObject<Partial<fabric.FabricObjectProps>, fabric.SerializedObjectProps, fabric.ObjectEvents>) => {
+              img.set({
+                left: centerX - 100,
+                top: centerY - 100,
+                cornerColor: 'blue',
+                cornerStrokeColor: 'blue',
+                cornerSize: 12,
+                transparentCorners: false,
+                borderColor: 'blue',
+                borderScaleFactor: 2,
+                padding: 5,
+                data: { id: imageId, src: imgData }
+              });
 
-          fabricRef.current?.add(img);
-          
-          // 同步到 Firebase
-          const dbImageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-          set(dbImageRef, {
-            id: imageId,
-            x: img.left,
-            y: img.top,
-            width: img.width,
-            height: img.height,
-            src: imgData
-          });
-        });
+              fabricRef.current?.add(img);
+              
+              // 同步到 Firebase
+              const dbImageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
+              set(dbImageRef, {
+                id: imageId,
+                x: img.left,
+                y: img.top,
+                width: img.width,
+                height: img.height,
+                src: imgData
+              });
+            }
+          );
+        } else {
+          // 保持原有的桌面版處理邏輯
+          const mockEvent = {
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            dataTransfer: {
+              files: [new File([imgData], "image.png", { type: "image/png" })],
+            },
+            nativeEvent: {
+              offsetX: window.innerWidth / 2,
+              offsetY: window.innerHeight / 2,
+            },
+          } as unknown as React.DragEvent<HTMLDivElement>;
+
+          handleDrop(mockEvent, true);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -1066,20 +1094,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     
     switch (toolbarPosition) {
       case 'left':
-        return `${baseStyles} left-0 top-1/2 -translate-y-1/2 flex flex-col ${
-          isToolbarMinimized ? 'translate-x-[-40%]' : 'translate-x-4'
+        return `${baseStyles} left-2 top-1/2 -translate-y-1/2 flex flex-col ${
+          isToolbarMinimized ? 'translate-x-[-40%]' : 'translate-x-0'
         }`;
       case 'right':
-        return `${baseStyles} right-0 top-1/2 -translate-y-1/2 flex flex-col ${
-          isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-[-1rem]'
+        return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col ${
+          isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'
         }`;
       case 'top':
-        return `${baseStyles} top-0 left-1/2 -translate-x-1/2 flex flex-row min-w-[40px] ${
-          isToolbarMinimized ? 'translate-y-[-40%]' : 'translate-y-4'
+        return `${baseStyles} top-2 left-1/2 -translate-x-1/2 flex flex-row min-w-[40px] ${
+          isToolbarMinimized ? 'translate-y-[-40%]' : 'translate-y-0'
         }`;
         case 'bottom':
-      return `${baseStyles} bottom-0 right-0 flex flex-row min-w-[40px] ${
-        isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-[-1rem]'
+      return `${baseStyles} bottom-2 right-0 flex flex-row min-w-[40px] ${
+        isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-0'
       }`;
     }
   };
@@ -1093,7 +1121,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   // 輔助函數：獲取壓力值
   const getPressure = (evt: any): number => {
+    if (evt.pointerType === 'pen') {
+      return Math.max(0.15, evt.pressure * 1.5);
+    }
+    
     const deviceType = getDeviceType(evt);
+    if (deviceType === 'mouse') {
+      return 1;  // 保持滑鼠的設定不變
+    }
+    
+    if (deviceType === 'touch') {
+      return 0.9;  // 給手機觸控一個固定較高的壓力值
+    }
+    
+    // 其他設備保持原邏輯
     const toolPressureRanges = {
       pencil: {
         mouse: { base: 0.5, min: 0.4, max: 0.6 },
@@ -1435,25 +1476,25 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         style={{ cursor: isDraggingToolbar ? 'grabbing' : 'grab' }}
       >
         {/* 最小化按鈕 */}
-        <div className={`p-2 ${['top', 'bottom'].includes(toolbarPosition) ? 'border-r' : 'border-b'} border-white border-opacity-20`}>
+        <div className={`p-1 ${['top', 'bottom'].includes(toolbarPosition) ? 'border-r' : 'border-b'} border-white border-opacity-20`}>
           <button
             onClick={() => setIsToolbarMinimized(!isToolbarMinimized)}
             className="text-white hover:text-gray-300 transition-colors"
             title={isToolbarMinimized ? "展開工具列" : "收起工具列"}
           >
             {isToolbarMinimized ? (
-              <div className="w-8 h-8 flex items-center justify-center">
-                {toolbarPosition === 'right' && <AiOutlineLeft className="w-5 h-5" />}
-                {toolbarPosition === 'left' && <AiOutlineRight className="w-5 h-5" />}
-                {toolbarPosition === 'top' && <AiOutlineDown className="w-5 h-5" />}
-                {toolbarPosition === 'bottom' && <AiOutlineUp className="w-5 h-5" />}
+              <div className="w-8 h-8 flex items-center justify-center ">
+                {toolbarPosition === 'right' && <AiOutlineLeft size={24}/>}
+                {toolbarPosition === 'left' && <AiOutlineRight size={24}/>}
+                {toolbarPosition === 'top' && <AiOutlineDown size={24}/>}
+                {toolbarPosition === 'bottom' && <AiOutlineUp size={24}/>}
               </div>
             ) : (
-              <div className="w-8 h-8 flex items-center justify-center">
-                {toolbarPosition === 'right' && <AiOutlineRight className="w-5 h-5" />}
-                {toolbarPosition === 'left' && <AiOutlineLeft className="w-5 h-5" />}
-                {toolbarPosition === 'top' && <AiOutlineUp className="w-5 h-5" />}
-                {toolbarPosition === 'bottom' && <AiOutlineDown className="w-5 h-5" />}
+              <div className="w-8 h-8 flex items-center justify-center ml-2">
+                {toolbarPosition === 'right' && <AiOutlineRight size={24}/>}
+                {toolbarPosition === 'left' && <AiOutlineLeft size={24}/>}
+                {toolbarPosition === 'top' && <AiOutlineUp size={24}/>}
+                {toolbarPosition === 'bottom' && <AiOutlineDown size={24}/>}
               </div>
             )}
           </button>
@@ -1596,9 +1637,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       {/* 聊天室面板 */}
       <div 
         id="chat-container"
-        className={`fixed bottom-4 transition-all duration-300 ${
-          isChatHidden ? '-left-[360px]' : 'left-4'
-        } w-[400px] bg-black bg-opacity-50 rounded-lg shadow-lg z-40`}
+        className={`fixed bottom-3 transition-all duration-300 ${
+          isChatHidden ? '-left-[280px]' : 'left-3'
+        } w-[310px] bg-black bg-opacity-50 rounded-lg shadow-lg z-40`}
         onTouchStart={(e) => setStartX(e.touches[0].clientX)}
         onTouchMove={(e) => {
           if (startX !== null) {
@@ -1613,41 +1654,43 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         {isMinimized ? (
           // 最小化時的標題欄
           <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
-            <h3 className="text-white text-sm font-medium">聊天室</h3>
+            <h3 className="text-white text-sm font-medium">{t.chat.title}</h3>
             <div className="flex items-center gap-2">
+            <button
+                onClick={() => setIsMinimized(false)}
+                className="text-white hover:text-gray-300"
+              >
+                <AiOutlinePlus size={24} className="icon" />
+              </button>
               <button
                 onClick={() => setIsChatHidden(!isChatHidden)}
                 className="text-white hover:text-gray-300"
                 title={isChatHidden ? "顯示聊天室" : "隱藏聊天室"}
               >
-                {isChatHidden ? "→" : "←"}
+                {isChatHidden ? <AiOutlineRight size={24} className="icon" /> : <AiOutlineLeft size={24} className="icon" />}
               </button>
-              <button
-                onClick={() => setIsMinimized(false)}
-                className="text-white hover:text-gray-300"
-              >
-                +
-              </button>
+              
             </div>
           </div>
         ) : (
           <>
             {/* 展開時的標題欄 */}
             <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
-              <h3 className="text-white text-sm font-medium">聊天室</h3>
+              <h3 className="text-white text-sm font-medium">{t.chat.title}</h3>
               <div className="flex items-center gap-2">
+                
+                <button
+                  onClick={() => setIsMinimized(true)}
+                  className="text-white hover:text-gray-300"
+                >
+                  <AiOutlineMinus size={24} className="icon" />
+                </button>
                 <button
                   onClick={() => setIsChatHidden(!isChatHidden)}
                   className="text-white hover:text-gray-300"
                   title={isChatHidden ? "顯示聊天室" : "隱藏聊天室"}
                 >
-                  {isChatHidden ? "→" : "←"}
-                </button>
-                <button
-                  onClick={() => setIsMinimized(true)}
-                  className="text-white hover:text-gray-300"
-                >
-                  -
+                  {isChatHidden ? <AiOutlineRight size={24} className="icon" /> : <AiOutlineLeft size={24} className="icon" />}
                 </button>
               </div>
             </div>
@@ -1721,14 +1764,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 handleSendMessage(e);
               }
             }}
-            placeholder="輸入訊息..."
+            placeholder="message..."
             className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           <button
             onClick={handleSendMessage}
-            className="px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-3 py-1.5 bg-[#87A9B2] text-white rounded-lg hover:bg-[#6B8B95] 
+                       transition-colors duration-200 flex items-center gap-1.5 
+                       shadow-md hover:shadow-lg active:scale-95 transform"
           >
-            發送
+            
+            <IoSend size={16} className="text-white" />
           </button>
         </div>
       </div>
@@ -1736,20 +1782,24 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       {/* 房間資訊面板 */}
       <div 
         id="room-info-container"
-        className="absolute top-4 right-4 w-64 bg-black bg-opacity-50 rounded-lg shadow-lg z-40"
+        className="absolute top-2 right-2 w-64 bg-black bg-opacity-50 rounded-lg shadow-lg z-40"
         style={{ 
           height: isRoomInfoMinimized ? '40px' : `${roomInfoHeight}px`,
           transition: 'height 0.2s'
         }}
       >
         <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
-          <h3 className="text-white text-sm font-medium">房間名: {roomId}</h3>
-          <span className="text-white text-sm">人數: {users.length}</span>
+          <h3 className="text-white text-sm font-medium">{t.roomInfo.roomName}:{roomId}</h3>
+          <span className="text-white text-sm">{t.roomInfo.userCount}: {users.length}</span>
           <button
             onClick={() => setIsRoomInfoMinimized(!isRoomInfoMinimized)}
             className="text-white hover:text-gray-300"
           >
-            {isRoomInfoMinimized ? <AiOutlineDown /> : <AiOutlineUp />}
+            {isRoomInfoMinimized ? (
+              <AiOutlineDown size={24} />
+            ) : (
+              <AiOutlineUp size={24} />
+            )}
           </button>
         </div>
 
@@ -1761,7 +1811,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             >
               
               <div className="py-2">
-                <p className="text-white text-sm mb-1">在線成員：</p>
+                <p className="text-white text-sm mb-1">{t.roomInfo.onlineMembers}:</p>
                 <ul className="space-y-1">
                   {users.map((user, index) => (
                     <li 
