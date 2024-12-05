@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useCanvasStore } from '../../store/useCanvasStore';
 import { database } from '../../config/firebase';
 import { ref, onValue, set, push, serverTimestamp } from 'firebase/database';
-import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload } from 'react-icons/bi';
+import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload, BiUndo, BiRedo } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
 import debounce from 'lodash/debounce';
 import { AiOutlineDown, AiOutlineUp, AiOutlineLeft, AiOutlineRight } from 'react-icons/ai';
@@ -187,25 +187,25 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const baseWidthMultiplier = {
       mouse: 1.0,
       touch: 1.5,
-      pen: 0.8
+      pen: 1.2
     }[deviceType];
 
     const tensionAdjustment = {
       mouse: 0.1,
       touch: 0.2,
-      pen: 0
+      pen: 0.05
     }[deviceType];
 
     switch (toolType) {
       case 'pencil':
         return {
-          tension: 0.3 - tensionAdjustment,
-          opacity: 0.85,
-          strokeWidth: strokeWidth * 0.8 * baseWidthMultiplier,
+          tension: 0.2 - tensionAdjustment,
+          opacity: deviceType === 'pen' ? 0.95 : 0.85,
+          strokeWidth: strokeWidth * (deviceType === 'pen' ? 1.0 : 0.8) * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowBlur: 0.2
+          shadowBlur: deviceType === 'pen' ? 0.1 : 0.2
         };
 
       case 'brush':
@@ -297,9 +297,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   };
 
   const handlePointerDown = useCallback((e: any) => {
-    // 添加觸控事件的特定處理
-
     const getPressure = (evt: any): number => {
+      if (evt.pointerType === 'pen') {
+        return Math.max(0.15, evt.pressure * 1.5);
+      }
+      
       const deviceType = getDeviceType(evt);
       const toolPressureRanges = {
         pencil: {
@@ -332,52 +334,67 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] || 
                     toolPressureRanges.pencil[deviceType];
 
-      const basePressure = evt.pressure || ranges.base;
-      return Math.max(ranges.min, Math.min(ranges.max, basePressure));
+      return Math.max(ranges.min, Math.min(ranges.max, evt.pressure || ranges.base));
     };
 
     if (e.evt.pointerType === 'pen') {
       e.evt.preventDefault();
-      // 確保觸控筆事件優先處理
       e.evt.stopPropagation();
     }
+
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
-    
-    // 檢測設備類型
     const deviceType = getDeviceType(e.evt);
-    
-    // 獲取壓力值
     const pressure = getPressure(e.evt);
     
-    const isRightClick = e.evt.button === 2;
-    const isMiddleClick = e.evt.button === 1;
-    
-    if (isRightClick || isMiddleClick || e.evt.ctrlKey || e.evt.metaKey || dragMode) {
-      setIsDragging(true);
-      return;
+    if (e.evt.pointerType === 'pen') {
+      const lineProps = getLineProperties(tool, 'pen');
+      const adjustedStrokeWidth = lineProps.strokeWidth * (pressure * 1.2);
+
+      const newLine: LineElement = {
+        tool,
+        points: [pos.x, pos.y],
+        strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
+        ...lineProps,
+        strokeWidth: adjustedStrokeWidth,
+        deviceType: 'pen',
+        tension: 0.2,
+        opacity: Math.min(1, lineProps.opacity * 1.3)
+      };
+
+      setCurrentLine(newLine);
+      const roomRef = ref(database, `rooms/${roomId}/lines`);
+      const newLineRef = push(roomRef);
+      set(newLineRef, newLine);
+    } else {
+      const isRightClick = e.evt.button === 2;
+      const isMiddleClick = e.evt.button === 1;
+      
+      if (isRightClick || isMiddleClick || e.evt.ctrlKey || e.evt.metaKey || dragMode) {
+        setIsDragging(true);
+        return;
+      }
+
+      setIsPressing(true);
+      setLastPointerPosition({ x: pos.x, y: pos.y });
+      
+      const lineProps = getLineProperties(tool, deviceType);
+      const adjustedStrokeWidth = lineProps.strokeWidth * pressure * 0.5;
+
+      const newLine: LineElement = {
+        tool,
+        points: [pos.x, pos.y],
+        strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
+        ...lineProps,
+        strokeWidth: adjustedStrokeWidth,
+        deviceType: deviceType
+      };
+
+      setCurrentLine(newLine);
+      const roomRef = ref(database, `rooms/${roomId}/lines`);
+      const newLineRef = push(roomRef);
+      set(newLineRef, newLine);
     }
-
-    setIsPressing(true);
-    setLastPointerPosition({ x: pos.x, y: pos.y });
-    
-    // 將觸控狀態和壓力值傳遞給 getLineProperties
-    const lineProps = getLineProperties(tool, deviceType);
-    const adjustedStrokeWidth = lineProps.strokeWidth * pressure * 0.5; // 進一步降低初始筆觸寬度
-
-    const newLine: LineElement = {
-      tool,
-      points: [pos.x, pos.y],
-      strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
-      ...lineProps,
-      strokeWidth: adjustedStrokeWidth,
-      deviceType: deviceType
-    };
-
-    setCurrentLine(newLine);
-    const roomRef = ref(database, `rooms/${roomId}/lines`);
-    const newLineRef = push(roomRef);
-    set(newLineRef, newLine);
   }, [tool, strokeColor, dragMode, roomId]);
 
   const handlePointerMove = useCallback((e: any) => {
@@ -397,23 +414,63 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
     
-    // 檢測設備類型和壓力值
-    const deviceType = getDeviceType(e.evt);
-    const pressure = e.evt.pressure || 0.5;
-    
-    // 更新線條點位
-    const newLine = {
-      ...currentLine,
-      points: [...currentLine.points, pos.x, pos.y], // 直接添加新點位
-      strokeWidth: currentLine.strokeWidth * (pressure * 0.5 + 0.5)
-    };
-    
-    setCurrentLine(newLine);
-    setLastPointerPosition({ x: pos.x, y: pos.y });
+    if (e.evt.pointerType === 'pen') {
+      const pressure = Math.max(0.15, e.evt.pressure * 1.5);
+      const dx = pos.x - lastPointerPosition.x;
+      const dy = pos.y - lastPointerPosition.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      const minDistance = 2;
+      if (distance < minDistance) {
+        const angle = Math.atan2(dy, dx);
+        const newPoints = [];
+        for (let i = 0; i <= distance; i += 0.5) {
+          newPoints.push(
+            lastPointerPosition.x + Math.cos(angle) * i,
+            lastPointerPosition.y + Math.sin(angle) * i
+          );
+        }
+        
+        const newLine = {
+          ...currentLine,
+          points: [...currentLine.points, ...newPoints],
+          strokeWidth: currentLine.strokeWidth * (pressure * 1.1)
+        };
+        
+        setCurrentLine(newLine);
+        setLastPointerPosition({ x: pos.x, y: pos.y });
 
-    // 使用防抖更新 Firebase
-    const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
-    set(roomRef, newLine);
+        const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
+        set(roomRef, newLine);
+      } else {
+        const newLine = {
+          ...currentLine,
+          points: [...currentLine.points, pos.x, pos.y],
+          strokeWidth: currentLine.strokeWidth * (pressure * 1.1)
+        };
+        
+        setCurrentLine(newLine);
+        setLastPointerPosition({ x: pos.x, y: pos.y });
+
+        const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
+        set(roomRef, newLine);
+      }
+    } else {
+      const deviceType = getDeviceType(e.evt);
+      const pressure = e.evt.pressure || 0.5;
+      
+      const newLine = {
+        ...currentLine,
+        points: [...currentLine.points, pos.x, pos.y],
+        strokeWidth: currentLine.strokeWidth * (pressure * 0.5 + 0.5)
+      };
+      
+      setCurrentLine(newLine);
+      setLastPointerPosition({ x: pos.x, y: pos.y });
+
+      const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
+      set(roomRef, newLine);
+    }
   }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length]);
 
   const handlePointerUp = useCallback((e: any) => {
@@ -1116,42 +1173,92 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
-  // 添加兩指縮放功能
+  // 修改兩指縮放功能，只在拖曳模式下生效
   useEffect(() => {
     let lastDistance = 0;
+    let lastCenter = { x: 0, y: 0 };
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (!dragMode) return; // 只在拖曳模式下處理
+
       if (e.touches.length === 2) {
+        // 計算初始兩指距離
         lastDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
+
+        // 計算兩指中心點
+        lastCenter = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (!dragMode) return; // 只在拖曳模式下處理
+
       if (e.touches.length === 2) {
+        e.preventDefault(); // 防止頁面被縮放
+
+        // 計算當前兩指距離
         const distance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
 
-        const scaleChange = distance / lastDistance;
-        const newScale = scale * scaleChange;
-        setScale(Math.min(Math.max(0.1, newScale), 5));
+        // 計算當前中心點
+        const center = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
 
+        if (lastDistance > 0) {
+          // 計算縮放比例
+          const scaleChange = distance / lastDistance;
+          const newScale = scale * scaleChange;
+          
+          // 限制縮放範圍
+          const limitedScale = Math.min(Math.max(0.1, newScale), 5);
+          
+          // 更新縮放
+          setScale(limitedScale);
+
+          // 更新位置以保持縮放中心點
+          const deltaX = center.x - lastCenter.x;
+          const deltaY = center.y - lastCenter.y;
+          
+          setPosition(prev => ({
+            x: prev.x + deltaX,
+            y: prev.y + deltaY
+          }));
+        }
+
+        // 更新參考值
         lastDistance = distance;
+        lastCenter = center;
       }
     };
 
-    document.addEventListener('touchstart', handleTouchStart);
-    document.addEventListener('touchmove', handleTouchMove);
+    const handleTouchEnd = () => {
+      lastDistance = 0;
+    };
 
+    // 添加事件監聽器
+    if (dragMode) {
+      document.addEventListener('touchstart', handleTouchStart);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+    }
+
+    // 清理事件監聽器
     return () => {
       document.removeEventListener('touchstart', handleTouchStart);
       document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [scale]);
+  }, [dragMode, scale, setScale, setPosition]); // 添加相關依賴
 
   return (
     <div 
@@ -1280,6 +1387,32 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           isToolbarMinimized ? 'w-0 h-0 overflow-hidden opacity-0' : 'w-auto opacity-100 p-2'
         }`}>
           <div className={`flex ${['top', 'bottom'].includes(toolbarPosition) ? 'flex-row' : 'flex-col'} gap-2`}>
+            <button
+              className={`p-2 rounded-lg transition-colors ${
+                currentStep > 0 
+                  ? 'bg-white/20 hover:bg-white/30 text-white' 
+                  : 'bg-white/10 text-white/50 cursor-not-allowed'
+              }`}
+              onClick={handleUndo}
+              disabled={currentStep <= 0}
+              title="復原 (Ctrl+Z)"
+            >
+              <BiUndo size={24} />
+            </button>
+
+            <button
+              className={`p-2 rounded-lg transition-colors ${
+                currentStep < history.length - 1 
+                  ? 'bg-white/20 hover:bg-white/30 text-white' 
+                  : 'bg-white/10 text-white/50 cursor-not-allowed'
+              }`}
+              onClick={handleRedo}
+              disabled={currentStep >= history.length - 1}
+              title="重做 (Ctrl+Shift+Z)"
+            >
+              <BiRedo size={24} />
+            </button>
+
             <button
               className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
               onClick={zoomIn}
