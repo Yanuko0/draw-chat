@@ -615,13 +615,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         const imgData = event.target?.result as string;
         const imageId = Date.now().toString();
         
-        // 根據來源決定位置
+        // 計算正確的放置位置
+        const stage = stageRef.current;
         const position = isUpload ? {
           x: window.innerWidth / 2 - 100,  // 畫面中心
           y: window.innerHeight / 2 - 100
         } : {
-          x: e.nativeEvent.offsetX,        // 拖放位置
-          y: e.nativeEvent.offsetY
+          x: (e.nativeEvent.offsetX - stage.x()) / stage.scaleX(),
+          y: (e.nativeEvent.offsetY - stage.y()) / stage.scaleY()
         };
 
         const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
@@ -716,7 +717,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           y={image.y}
           width={image.width}
           height={image.height}
-          draggable={true}
+          draggable={dragMode}
           onClick={(e) => {
             e.cancelBubble = true;
             setSelectedImage(image.id);
@@ -1344,7 +1345,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, [roomId, nickname, router]);
 
   return (
-    <div className="relative">
+    <div 
+      className="relative"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <Stage
         ref={stageRef}
         width={window.innerWidth}
@@ -1369,13 +1374,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           userSelect: 'none',
         }}
         onClick={handleStageClick}
-        onMouseDown={(e) => {
-          // 點擊空白處取消選中
-          const clickedOnEmpty = e.target === e.target.getStage();
-          if (clickedOnEmpty) {
-            setSelectedImage(null);
-          }
-        }}
         onContextMenu={e => e.evt.preventDefault()}
       >
         <Layer>
