@@ -73,17 +73,21 @@ const Toolbar = () => {
           <div className="flex justify-between items-start">
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-2">
-                <select
-                  className="px-2 md:px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-white text-sm transition-colors"
-                  onChange={(e) => handleToolChange(e.target.value as Tool)}
-                  value={tool === 'eraser' ? 'pencil' : tool}
-                >
-                  <option className="bg-gray-800 text-white" value="pencil">鉛筆</option>
-                  <option className="bg-gray-800 text-white" value="brush">毛筆</option>
-                  <option className="bg-gray-800 text-white" value="marker">麥克筆</option>
-                  <option className="bg-gray-800 text-white" value="highlighter">螢光筆</option>
-                  <option className="bg-gray-800 text-white" value="ink">墨水筆</option>
-                </select>
+                {tool !== 'eraser' ? (
+                  <select
+                    className="px-2 md:px-4 py-2 bg-white/20 rounded-lg hover:bg-white/30 text-white text-sm transition-colors"
+                    onChange={(e) => handleToolChange(e.target.value as Tool)}
+                    value={tool}
+                  >
+                    <option className="bg-gray-800 text-white" value="pencil">鉛筆</option>
+                    <option className="bg-gray-800 text-white" value="brush">毛筆</option>
+                    <option className="bg-gray-800 text-white" value="marker">麥克筆</option>
+                    <option className="bg-gray-800 text-white" value="highlighter">螢光筆</option>
+                    <option className="bg-gray-800 text-white" value="ink">墨水筆</option>
+                  </select>
+                ) : (
+                  <span className="px-2 md:px-4 py-2 text-white text-sm">橡皮擦</span>
+                )}
 
                 <button
                   className={`px-3 md:px-4 py-2 rounded-lg whitespace-nowrap text-sm transition-colors ${
@@ -97,8 +101,8 @@ const Toolbar = () => {
                 </button>
               </div>
 
-              {tool !== 'eraser' && (
-                <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
+                {tool !== 'eraser' && (
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -106,35 +110,37 @@ const Toolbar = () => {
                       onChange={(e) => setStrokeColor(e.target.value)}
                       className="w-8 h-8 cursor-pointer rounded border border-white/30"
                     />
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min="1"
-                        max="50"
-                        value={strokeWidth}
-                        onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                        className="w-32"
-                      />
-                      <span className="text-sm w-12 text-white">{strokeWidth}px</span>
-                    </div>
                   </div>
-                  
-                  {/* 顯示當前工具的預覽 */}
-                  <div className="text-white text-xs opacity-70">
-                    目前使用: {
-                      {
-                        'pencil': '鉛筆',
-                        'brush': '毛筆',
-                        'marker': '麥克筆',
-                        'highlighter': '螢光筆',
-                        'ink': '墨水筆',
-                        'eraser': '橡皮擦',
-                        'select': '選擇'
-                      }[tool]
-                    }
-                  </div>
+                )}
+                
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={strokeWidth}
+                    onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                    className="w-32"
+                  />
+                  <span className="text-sm w-12 text-white">
+                    {strokeWidth}px
+                  </span>
                 </div>
-              )}
+                
+                <div className="text-white text-xs opacity-70">
+                  目前使用: {
+                    {
+                      'pencil': '鉛筆',
+                      'brush': '毛筆',
+                      'marker': '麥克筆',
+                      'highlighter': '螢光筆',
+                      'ink': '墨水筆',
+                      'eraser': '橡皮擦',
+                      'select': '選擇'
+                    }[tool]
+                  }
+                </div>
+              </div>
             </div>
 
             <button

@@ -53,11 +53,15 @@ interface RoomUser {
   nickname: string;
 }
 
+interface LineWithUser extends LineElement {
+  userId: string;
+}
+
 const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
-  const [lines, setLines] = useState<LineElement[]>([]);
+  const [lines, setLines] = useState<LineWithUser[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [currentLine, setCurrentLine] = useState<LineElement | null>(null);
+  const [currentLine, setCurrentLine] = useState<LineWithUser | null>(null);
   const { tool, strokeWidth, strokeColor, setStrokeColor } = useCanvasStore();
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -86,8 +90,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [showDeleteButton, setShowDeleteButton] = useState<string | null>(null);
   const [isChatHidden, setIsChatHidden] = useState(false);
   const [startX, setStartX] = useState<number | null>(null);
-  const [history, setHistory] = useState<LineElement[][]>([]);
-  const [currentStep, setCurrentStep] = useState(-1);
+  const [history, setHistory] = useState<LineWithUser[][]>([[]]);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [showTutorial, setShowTutorial] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Firebase 監聽
   useEffect(() => {
@@ -95,9 +103,21 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const unsubscribe = onValue(roomRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        setLines(Object.values(data));
+        const newLines = Object.values(data) as LineWithUser[];
+        setLines(newLines);
+        
+        // 更新歷史記錄
+        if (!history.some(historyLines => 
+          JSON.stringify(historyLines) === JSON.stringify(newLines)
+        )) {
+          const newHistory = [...history, newLines];
+          setHistory(newHistory);
+          setCurrentStep(newHistory.length - 1);
+        }
       } else {
         setLines([]);
+        setHistory([[]]);
+        setCurrentStep(0);
       }
     });
     return () => unsubscribe();
@@ -351,7 +371,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const lineProps = getLineProperties(tool, 'pen');
       const adjustedStrokeWidth = lineProps.strokeWidth * (pressure * 1.2);
 
-      const newLine: LineElement = {
+      const newLine: LineWithUser = {
         tool,
         points: [pos.x, pos.y],
         strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
@@ -359,7 +379,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         strokeWidth: adjustedStrokeWidth,
         deviceType: 'pen',
         tension: 0.2,
-        opacity: Math.min(1, lineProps.opacity * 1.3)
+        opacity: Math.min(1, lineProps.opacity * 1.3),
+        userId: nickname,
       };
 
       setCurrentLine(newLine);
@@ -381,13 +402,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const lineProps = getLineProperties(tool, deviceType);
       const adjustedStrokeWidth = lineProps.strokeWidth * pressure * 0.5;
 
-      const newLine: LineElement = {
+      const newLine: LineWithUser = {
         tool,
         points: [pos.x, pos.y],
         strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
         ...lineProps,
         strokeWidth: adjustedStrokeWidth,
-        deviceType: deviceType
+        deviceType: deviceType,
+        userId: nickname,
       };
 
       setCurrentLine(newLine);
@@ -395,7 +417,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const newLineRef = push(roomRef);
       set(newLineRef, newLine);
     }
-  }, [tool, strokeColor, dragMode, roomId]);
+  }, [tool, strokeColor, dragMode, roomId, nickname]);
 
   const handlePointerMove = useCallback((e: any) => {
     e.evt.preventDefault();
@@ -414,55 +436,47 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
     
-    if (e.evt.pointerType === 'pen') {
-      const pressure = Math.max(0.15, e.evt.pressure * 1.5);
-      const dx = pos.x - lastPointerPosition.x;
-      const dy = pos.y - lastPointerPosition.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    // 計算兩點之間的距離
+    const dx = pos.x - lastPointerPosition.x;
+    const dy = pos.y - lastPointerPosition.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // 如果距離太大，插入中間點
+    const minDistance = 2; // 最小距離閾值
+    const maxDistance = 10; // 最大距離閾值
+    
+    if (distance > minDistance) {
+      const angle = Math.atan2(dy, dx);
+      const steps = Math.ceil(distance / minDistance);
+      const newPoints = [];
       
-      const minDistance = 2;
-      if (distance < minDistance) {
-        const angle = Math.atan2(dy, dx);
-        const newPoints = [];
-        for (let i = 0; i <= distance; i += 0.5) {
-          newPoints.push(
-            lastPointerPosition.x + Math.cos(angle) * i,
-            lastPointerPosition.y + Math.sin(angle) * i
-          );
-        }
-        
-        const newLine = {
-          ...currentLine,
-          points: [...currentLine.points, ...newPoints],
-          strokeWidth: currentLine.strokeWidth * (pressure * 1.1)
-        };
-        
-        setCurrentLine(newLine);
-        setLastPointerPosition({ x: pos.x, y: pos.y });
-
-        const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
-        set(roomRef, newLine);
-      } else {
-        const newLine = {
-          ...currentLine,
-          points: [...currentLine.points, pos.x, pos.y],
-          strokeWidth: currentLine.strokeWidth * (pressure * 1.1)
-        };
-        
-        setCurrentLine(newLine);
-        setLastPointerPosition({ x: pos.x, y: pos.y });
-
-        const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
-        set(roomRef, newLine);
+      // 在兩點之間插入額外的點
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = lastPointerPosition.x + dx * t;
+        const y = lastPointerPosition.y + dy * t;
+        newPoints.push(x, y);
       }
-    } else {
-      const deviceType = getDeviceType(e.evt);
-      const pressure = e.evt.pressure || 0.5;
-      
+
+      // 根據工具類型設置壓力
+      let pressure;
+      if (e.evt.pointerType === 'pen') {
+        pressure = Math.max(0.15, e.evt.pressure * 1.5);
+      } else if (e.evt.pointerType === 'touch') {
+        pressure = 0.5; // 觸控預設壓力
+      } else {
+        pressure = 0.5; // 滑鼠預設壓力
+      }
+
+      // 橡皮擦使用固定寬度
+      const strokeWidth = currentLine.tool === 'eraser' 
+        ? currentLine.strokeWidth 
+        : currentLine.strokeWidth * pressure;
+
       const newLine = {
         ...currentLine,
-        points: [...currentLine.points, pos.x, pos.y],
-        strokeWidth: currentLine.strokeWidth * (pressure * 0.5 + 0.5)
+        points: [...currentLine.points, ...newPoints],
+        strokeWidth
       };
       
       setCurrentLine(newLine);
@@ -646,7 +660,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     debounce((path: string, data: any) => {
       const dbRef = ref(database, path);
       set(dbRef, data);
-    }, 8.33),  // 降低延遲時間到 16ms (約60fps)
+    }, 6.94),  //144fps
     []
   );
 
@@ -1112,29 +1126,32 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     return Math.max(ranges.min, Math.min(ranges.max, basePressure));
   };
 
-  const handleDownloadCanvas = () => {
+  const handleDownloadCanvas = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    // 使用 Konva 的 toDataURL 方法
-    const dataURL = stage.toDataURL({
-      pixelRatio: window.devicePixelRatio || 1,
-      mimeType: 'image/png',
-      quality: 1,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      callback: (dataUrl: string) => {
-        // 創建下載連結
-        const link = document.createElement('a');
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        link.download = `canvas-${timestamp}.png`;
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    });
-  };
+    try {
+      // 直接使用 toDataURL
+      const dataURL = stage.toDataURL({
+        pixelRatio: window.devicePixelRatio || 1,
+        mimeType: 'image/png',
+        quality: 1
+      });
+
+      // 創建下載連結
+      const link = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.download = `whiteboard-${timestamp}.png`;
+      link.href = dataURL;
+      
+      // 觸發下載
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('下載畫布時發生錯誤:', error);
+    }
+  }, []);
 
   const handleUndo = useCallback(() => {
     if (currentStep > 0) {
@@ -1148,13 +1165,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handleRedo = useCallback(() => {
     if (currentStep < history.length - 1) {
-      setCurrentStep(prev => prev + 1);
-      setLines(history[currentStep + 1]);
-      // 同步到 Firebase
-      const roomRef = ref(database, `rooms/${roomId}/lines`);
-      set(roomRef, history[currentStep + 1]);
+      const nextStep = currentStep + 1;
+      const nextLines = history[nextStep];
+      
+      // 確保只重做當前用戶的操作
+      if (nextLines?.some(line => line.userId === nickname)) {
+        setCurrentStep(nextStep);
+        setLines(nextLines);
+        
+        // 同步到 Firebase
+        const roomRef = ref(database, `rooms/${roomId}/lines`);
+        set(roomRef, nextLines);
+      }
     }
-  }, [currentStep, history, roomId]);
+  }, [currentStep, history, roomId, nickname]);
 
   // 添加快捷鍵支持
   useEffect(() => {
@@ -1259,6 +1283,18 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       document.removeEventListener('touchend', handleTouchEnd);
     };
   }, [dragMode, scale, setScale, setPosition]); // 添加相關依賴
+
+  const canUndo = useCallback(() => {
+    if (currentStep <= 0) return false;
+    const currentLines = history[currentStep];
+    return currentLines.some(line => line.userId === nickname);
+  }, [currentStep, history, nickname]);
+
+  const canRedo = useCallback(() => {
+    if (currentStep >= history.length - 1) return false;
+    const nextLines = history[currentStep + 1];
+    return nextLines?.some(line => line.userId === nickname);
+  }, [currentStep, history, nickname]);
 
   return (
     <div 
@@ -1389,12 +1425,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           <div className={`flex ${['top', 'bottom'].includes(toolbarPosition) ? 'flex-row' : 'flex-col'} gap-2`}>
             <button
               className={`p-2 rounded-lg transition-colors ${
-                currentStep > 0 
+                canUndo() 
                   ? 'bg-white/20 hover:bg-white/30 text-white' 
                   : 'bg-white/10 text-white/50 cursor-not-allowed'
               }`}
               onClick={handleUndo}
-              disabled={currentStep <= 0}
+              disabled={!canUndo()}
               title="復原 (Ctrl+Z)"
             >
               <BiUndo size={24} />
@@ -1402,12 +1438,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
             <button
               className={`p-2 rounded-lg transition-colors ${
-                currentStep < history.length - 1 
+                canRedo() 
                   ? 'bg-white/20 hover:bg-white/30 text-white' 
                   : 'bg-white/10 text-white/50 cursor-not-allowed'
               }`}
               onClick={handleRedo}
-              disabled={currentStep >= history.length - 1}
+              disabled={!canRedo()}
               title="重做 (Ctrl+Shift+Z)"
             >
               <BiRedo size={24} />
