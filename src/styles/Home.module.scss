@@ -1,0 +1,792 @@
+.root {
+    // 亮色系莫蘭迪色系（重新設計）
+    --primary-color: #B8C5BA;    // 清新的鼠尾草綠
+    --secondary-color: #C5B8A5;  // 溫暖的奶咖色
+    --background-start: #F2F4F0; // 清新的薄荷白起始
+    --background-end: #EDF0EA;   // 柔和的鼠尾草白結束
+    --card-bg: #E5E0D5;         // 更改：白板協作背景色，溫暖的奶咖白
+    --text-primary: #5F6661;     // 沉穩的深鼠尾草綠
+    --text-secondary: #9BA39D;   // 柔和的淺鼠尾草綠
+    --input-border: #C5B8A5;     // 輸入框邊框顏色
+    --input-bg: rgba(255, 255, 255, 0.9);
+    --roomlist-bg: #DCE2DD;     // 更改：已建房間背景，清新的鼠尾草白
+    --roomlist-text: #5F6661;
+    --roomlist-hover: rgba(184, 197, 186, 0.2);
+    --button-primary: #A9B5AB;   // 更改：建立房間按鈕，淺鼠尾草綠
+    --button-secondary: #B5A894; // 更改：加入房間按鈕，淺奶咖色
+}
+
+.dark {
+    // 深色系莫蘭迪色系
+    --primary-color: #5C6E75;    // 深灰藍色
+    --secondary-color: #8E7F84;  // 深玫瑰灰色
+    --background-start: #2D3436; // 深灰藍起始
+    --background-end: #232829;   // 深灰藍結束
+    --card-bg: #3A4245;         // 更改：白板協作背景色，深灰色
+    --text-primary: #E0E2E3;     // 淺灰白色
+    --text-secondary: #A6ACAE;   // 中灰色
+    --input-border: #8E7F84;     // 深色模式輸入框邊框
+    --input-bg: rgba(45, 52, 54, 0.9);
+    --roomlist-bg: #404B4E;     // 更改：已建房間背景，深灰藍色
+    --roomlist-text: #E0E2E3;
+    --roomlist-hover: rgba(92, 110, 117, 0.3);
+    --button-primary: #4D5D63;   // 更改：建立房間按鈕
+    --button-secondary: #766468; // 更改：加入房間按鈕
+}
+
+
+// 毛玻璃效果
+@mixin glass-effect {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+// 容器樣式
+.container {
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--background-start) 0%, var(--background-end) 100%);
+    padding: 2rem;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+// 主題切換按鈕
+.themeToggle {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    padding: 0.75rem;
+    border-radius: 50%;
+    background: var(--card-bg);
+    border: none;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+    svg {
+        width: 1.5rem;
+        height: 1.5rem;
+        color: var(--text-primary);
+        transition: all 0.3s ease;
+    }
+
+    // 亮色模式下的懸停效果
+    &:not(.dark):hover {
+        background: #1a1a1a;
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        
+        .moonIcon {
+            color: #FFD700;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8))
+                   drop-shadow(0 0 20px rgba(255, 215, 0, 0.4))
+                   drop-shadow(0 0 30px rgba(255, 215, 0, 0.2));
+            transform: scale(1.15);
+
+            // 使用偽元素添加星星效果
+            &::before {
+                content: '✦';
+                position: absolute;
+                font-size: 0.5rem;
+                color: #FFD700;
+                animation: twinkle 1.5s infinite;
+                left: 25%;
+                top: 25%;
+            }
+
+            &::after {
+                content: '✦';
+                position: absolute;
+                font-size: 0.5rem;
+                color: #FFD700;
+                animation: twinkle 1.5s infinite 0.5s;
+                right: 25%;
+                bottom: 25%;
+            }
+        }
+    }
+
+    // 暗色模式下的懸停效果
+    &.dark:hover {
+        background: #ffffff;
+        box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+        
+        .sunIcon {
+            color: #FFA500;
+            filter: drop-shadow(0 0 15px rgba(255, 165, 0, 0.9))
+                   drop-shadow(0 0 25px rgba(255, 165, 0, 0.5))
+                   drop-shadow(0 0 35px rgba(255, 165, 0, 0.3));
+            transform: scale(1.15);
+            animation: sunRotate 4s linear infinite;
+        }
+    }
+}
+
+// 星星閃爍動畫
+@keyframes twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+
+// 太陽旋轉動畫
+@keyframes sunRotate {
+    from { transform: rotate(0deg) scale(1.15); }
+    to { transform: rotate(360deg) scale(1.15); }
+}
+
+// 房間列表樣式
+.roomList {
+    @include glass-effect;
+    position: absolute;
+    top: 1rem;  // 改為頂部對齊
+    right: 1rem;
+    background: var(--roomlist-bg) !important;
+    border-radius: 16px;
+    transition: all 0.3s ease;
+    overflow: hidden;
+    width: 270px;
+    z-index: 10;  // 確保在其他元素上方
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+    // 收合狀態的樣式
+    &.collapsed {
+        width: 48px !important; // 固定寬度
+        height: 48px !important; // 固定高度
+        padding: 0; // 移除內邊距
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        
+        .header {
+            padding: 0;
+            border: none;
+            width: 100%;
+            height: 100%;
+            
+            
+            button {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                
+                &:hover {
+                    background: var(--roomlist-hover);
+                }
+
+                svg {
+                    width: 1.25rem;
+                    height: 1.25rem;
+                }
+            }
+            h3 {
+                display: none;
+            }
+        }
+        .roomContent {
+            display: none;
+        }
+    }
+    
+    .header {
+        padding: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        
+        h3 {
+            color: var(--roomlist-text);
+            font-weight: 600;
+            flex: 1;
+        }
+
+        button {
+            padding: 0.25rem;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            color: var(--roomlist-text);
+            
+            &:hover {
+                background: var(--roomlist-hover);
+            }
+        }
+    }
+    
+    .roomItem {
+        padding: 0.75rem 1rem;
+        margin: 0.5rem;
+        border-radius: 8px;
+        color: var(--roomlist-text);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        
+        &:hover {
+            background: var(--roomlist-hover);
+        }
+
+        .roomNameSection {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1;
+            margin-right: 1rem; // 與人數區塊分開
+
+            .roomName {
+                margin-right: 0.5rem; // 與鎖頭圖標保距離
+            }
+
+            svg {  // 鎖頭圖標
+                width: 1.25rem;
+                height: 1.25rem;
+            }
+        }
+        
+        .userCount {
+            padding: 0.25rem 0.75rem;
+            background: var(--roomlist-hover);
+            border-radius: 12px;
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+        
+       
+       
+    }
+}
+
+// 主卡片樣式
+.mainCard {
+    @include glass-effect;
+    max-width: 480px;
+    padding: 2.5rem;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.7); // 亮色模式下更透明
+    box-shadow: 
+        0 8px 32px rgba(148, 168, 154, 0.15),
+        0 2px 8px rgba(148, 168, 154, 0.1);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
+
+
+    h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: var(--text-primary);
+        position: relative;
+        
+        // 亮色模式下的標題效果
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: -0.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 2px;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                var(--primary-color),
+                var(--secondary-color),
+                transparent
+            );
+        }
+    }
+
+    .dark & {
+        background: rgba(74, 93, 87, 0.2);
+        box-shadow: 
+            0 8px 32px rgba(0, 0, 0, 0.2),
+            0 2px 8px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+
+        h1 {
+            color: var(--text-primary);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    }
+}
+
+// 輸入框樣式
+.input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    border: 2px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+
+    &::placeholder {
+        color: var(--text-secondary);
+    }
+
+    &:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 4px rgba(148, 168, 154, 0.1);
+    }
+}
+
+// 按鈕樣式
+.button {
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+
+    &.primary {
+        background: var(--button-primary);
+        color: white;
+
+        &:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+    }
+
+    &.secondary {
+        background: var(--button-secondary);
+        color: white;
+
+        &:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+    }
+}
+
+
+// 房間列表樣式
+.roomList {
+    @include glass-effect;
+    background: var(--roomlist-bg) !important;
+    border-radius: 16px;
+    transition: all 0.3s ease;
+    
+    .header {
+        padding: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        
+        h3 {
+            color: var(--roomlist-text);
+            font-weight: 600;
+            flex: 1;
+        }
+
+        button {
+            padding: 0.25rem;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            
+            &:hover {
+                background: var(--roomlist-hover);
+            }
+        }
+    }
+    
+    // ... 其他樣式保持不變 ...
+}
+
+
+// 主表單容器
+.formContainer {
+    @include glass-effect;
+    width: 24rem;
+    padding: 2rem;
+    border-radius: 1rem;
+    background: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+
+    .title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        text-align: center;
+        color: var(--text-primary);
+    }
+
+    .inputField {
+        width: 100%;
+        height: 42px;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        border: 2px solid var(--input-border);
+        background: var(--input-bg);
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+
+        &::placeholder {
+            color: var(--text-secondary);
+        }
+
+        &:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+    }
+
+    .encryptButton {
+        height: 42px;
+        width: 42px;
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        &.encrypted {
+            background: var(--secondary-color);
+            color: white;
+        }
+
+        &.unencrypted {
+            background: var(--input-bg);
+            color: var(--text-secondary);
+        }
+    }
+
+    .errorText {
+        color: #EF4444;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+
+    .hintText {
+        margin-top: 1rem;
+        font-size: 0.875rem;
+        color: var(--text-primary);
+
+        ul {
+            list-style-type: disc;
+            padding-left: 1.25rem;
+            margin-top: 0.5rem;
+        }
+    }
+}
+
+// 深色模式樣式
+.dark {
+    .formContainer {
+        background: var(--primary-color);
+
+        .inputField {
+            background: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--text-primary);
+
+            &::placeholder {
+                color: var(--text-secondary);
+            }
+        }
+
+        .encryptButton {
+            &.unencrypted {
+                background: var(--input-bg);
+                color: var(--text-secondary);
+            }
+        }
+
+        .hintText {
+            color: var(--text-primary);
+        }
+    }
+    .roomList {
+        // ... 其他樣式保持不變 ...
+        
+        .header {
+            h3 {
+                color: #E5E7EB;  // 更亮的標題顏色
+                font-weight: 600;
+            }
+        }
+        
+        .roomItem {
+            color: #E5E7EB;  // 更亮的房間名稱顏色
+            
+            .roomNameSection {
+                .roomName {
+                    color: #E5E7EB;  // 確保房間名稱顏色也是亮的
+                }
+            }
+            
+            .userCount {
+                color: #D1D5DB;  // 使用稍微淡一點的顏色
+                background: rgba(255, 255, 255, 0.1);  // 半透明背景
+            }
+        }
+    }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+
+  h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+.headerLanguageSelector {
+  position: relative;
+  
+  .settingsButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+      transform: rotate(30deg);
+    }
+
+    svg {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+  }
+
+  .headerLanguageMenu {
+    position: fixed;
+    border-radius: 1rem;
+    overflow: hidden;
+    display: none;
+    
+    
+    
+    &::before {
+        content: '選擇語言';
+        display: block;
+        padding: 1rem 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      }
+
+      .languageOptions {
+        padding: 1rem;
+        display: grid;
+        gap: 0.5rem;
+      }
+    
+      button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 0.5rem;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        
+        &:hover {
+          background: var(--roomlist-hover);
+          transform: translateY(-1px);
+        }
+        
+        &:active {
+          transform: translateY(0);
+        }
+      
+    }
+  }
+}
+
+.headerLanguageMenu::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: -1;
+  }
+
+// 深色模式調整
+.dark {
+  .headerLanguageMenu {
+    background: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+
+    &::before {
+        border-bottom-color: rgba(255, 255, 255, 0.1);
+      }
+      button {
+        border-color: rgba(255, 255, 255, 0.1);
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.05);
+        }
+    }
+  }
+}
+
+// 語言選單相關樣式
+.languageMenuOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+
+.languageMenuContainer {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+}
+
+.languageMenu {
+  background: var(--card-bg);
+  border-radius: 1rem;
+  overflow: hidden;
+  width: 180px;
+  @include glass-effect;
+
+  button {
+    width: 100%;
+    padding: 1rem;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+
+    &:hover {
+      background: var(--roomlist-hover);
+    }
+
+    &:not(:last-child) {
+      border-bottom: 1px solid var(--input-border);
+      border-bottom-color: rgba(0, 0, 0, 0.1);
+    }
+  }
+}
+
+// 深色模式調整
+.dark {
+  .languageMenu {
+    background: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+
+    button {
+      color: var(--text-primary);
+      
+      &:not(:last-child) {
+        border-bottom-color: rgba(255, 255, 255, 0.1);
+      }
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+    }
+  }
+}
+
+.searchInput {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--input-border);
+    width: calc(100% - 2rem); // 減去左右邊距
+    margin: 0.75rem 1rem; // 添加邊距
+    background: var(--input-bg);
+    color: var(--text-primary);
+    
+    &:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+  }
+
+.roomFilters {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  margin-bottom: 0.75rem;
+
+  .filterButton {
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: var(--roomlist-hover);
+    }
+
+    &.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+  }
+}
+
+// 深色模式調整
+.dark {
+  .roomFilters {
+    .filterButton {
+      border-color: var(--input-border);
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      &.active {
+        background: var(--primary-color);
+        color: white;
+      }
+    }
+  }
+}
+

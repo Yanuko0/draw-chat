@@ -1,11 +1,15 @@
 import { useCanvasStore, Tool } from '../../store/useCanvasStore';
 import { useEffect, useState } from 'react';
-import { MdColorize, MdFormatColorFill, MdSelectAll } from 'react-icons/md';
+import { MdColorize, MdFormatColorFill, MdSelectAll, MdBrush } from 'react-icons/md';
 import { AiOutlineLeft, AiOutlineRight } from 'react-icons/ai';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { BsFillEraserFill, BsPencilFill, BsPaintBucket } from 'react-icons/bs';
+import { FaPaintBrush, FaHighlighter, FaPen } from 'react-icons/fa';
 
 const Toolbar = () => {
   const { tool, strokeColor, strokeWidth, setTool, setStrokeWidth, setStrokeColor } = useCanvasStore();
   const [isToolbarMinimized, setIsToolbarMinimized] = useState(true);
+  const { t } = useLanguage();
 
   const handleToolChange = (newTool: Tool) => {
     console.log('Toolbar: Changing tool from', tool, 'to', newTool);
@@ -25,7 +29,7 @@ const Toolbar = () => {
             <button
               onClick={() => setIsToolbarMinimized(false)}
               className="p-1 hover:bg-white/20 rounded transition-colors"
-              title="展開工具列"
+              title={t.toolbar.expand}
             >
               <AiOutlineRight className="w-4 h-4 text-white" />
             </button>
@@ -39,9 +43,9 @@ const Toolbar = () => {
                     : 'bg-white/20 hover:bg-white/30 text-white'
                 }`}
                 onClick={() => handleToolChange('pencil')}
-                title="鉛筆"
+                title={t.toolbar.tools.pencil}
               >
-                筆
+                {t.toolbar.tools.pencil[0]}
               </button>
 
               <button
@@ -51,9 +55,9 @@ const Toolbar = () => {
                     : 'bg-white/20 hover:bg-white/30 text-white'
                 }`}
                 onClick={() => handleToolChange('eraser')}
-                title="橡皮擦"
+                title={t.toolbar.tools.eraser}
               >
-                擦
+                <BsFillEraserFill className="w-4 h-4" />
               </button>
             </div>
 
@@ -62,7 +66,7 @@ const Toolbar = () => {
               <div 
                 className="w-6 h-6 rounded-full border border-white/30 shadow-sm"
                 style={{ backgroundColor: strokeColor }}
-                title="當前顏色"
+                title={t.toolbar.currentColor}
               />
             )}
           </div>
@@ -79,25 +83,45 @@ const Toolbar = () => {
                     onChange={(e) => handleToolChange(e.target.value as Tool)}
                     value={tool}
                   >
-                    <option className="bg-gray-800 text-white" value="pencil">鉛筆</option>
-                    <option className="bg-gray-800 text-white" value="brush">毛筆</option>
-                    <option className="bg-gray-800 text-white" value="marker">麥克筆</option>
-                    <option className="bg-gray-800 text-white" value="highlighter">螢光筆</option>
-                    <option className="bg-gray-800 text-white" value="ink">墨水筆</option>
+                    <option className="bg-gray-800 text-white flex items-center gap-2" value="pencil">
+                      <div className="flex items-center gap-2">
+                        <BsPencilFill className="w-4 h-4" /> 鉛筆
+                      </div>
+                    </option>
+                    <option className="bg-gray-800 text-white" value="brush">
+                      <div className="flex items-center gap-2">
+                        <FaPaintBrush className="w-4 h-4" /> 毛筆
+                      </div>
+                    </option>
+                    <option className="bg-gray-800 text-white" value="marker">
+                      <div className="flex items-center gap-2">
+                        <MdBrush className="w-4 h-4" /> 麥克筆
+                      </div>
+                    </option>
+                    <option className="bg-gray-800 text-white" value="highlighter">
+                      <div className="flex items-center gap-2">
+                        <FaHighlighter className="w-4 h-4" /> 螢光筆
+                      </div>
+                    </option>
+                    <option className="bg-gray-800 text-white" value="ink">
+                      <div className="flex items-center gap-2">
+                        <FaPen className="w-4 h-4" /> 墨水筆
+                      </div>
+                    </option>
                   </select>
                 ) : (
                   <span className="px-2 md:px-4 py-2 text-white text-sm">橡皮擦</span>
                 )}
 
                 <button
-                  className={`px-3 md:px-4 py-2 rounded-lg whitespace-nowrap text-sm transition-colors ${
+                  className={`px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors ${
                     tool === 'eraser' 
                       ? 'bg-white text-gray-800 hover:bg-gray-100' 
                       : 'bg-white/20 hover:bg-white/30 text-white'
                   }`}
                   onClick={() => handleToolChange(tool === 'eraser' ? 'pencil' : 'eraser')}
                 >
-                  橡皮擦
+                  <BsFillEraserFill className="w-4 h-4" />
                 </button>
               </div>
 
@@ -128,12 +152,12 @@ const Toolbar = () => {
                 </div>
                 
                 <div className="text-white text-xs opacity-70">
-                  目前使用: {
+                  {t.toolbar.currentTool}: {
                     {
                       'pencil': '鉛筆',
                       'brush': '毛筆',
                       'marker': '麥克筆',
-                      'highlighter': '螢光筆',
+                      'highlighter': '螢��筆',
                       'ink': '墨水筆',
                       'eraser': '橡皮擦',
                       'select': '選擇'
@@ -146,7 +170,7 @@ const Toolbar = () => {
             <button
               onClick={() => setIsToolbarMinimized(true)}
               className="ml-4 p-1 hover:bg-white/20 rounded transition-colors"
-              title="收起工具列"
+              title={t.toolbar.collapse}
             >
               <AiOutlineLeft className="w-4 h-4 text-white" />
             </button>

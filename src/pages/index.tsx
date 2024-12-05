@@ -3,6 +3,10 @@ import { useRouter } from 'next/router';
 import { database } from '../config/firebase';
 import { ref, get, onValue, set } from 'firebase/database';
 import { AiOutlineLock, AiOutlineUnlock, AiOutlineRight, AiOutlineLeft } from 'react-icons/ai';
+import { BsSun, BsMoon } from 'react-icons/bs';
+import { IoLanguage, IoSettingsSharp } from 'react-icons/io5';
+import styles from '../styles/Home.module.scss';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface Room {
   id: string;
@@ -14,6 +18,123 @@ interface Room {
 interface TimerMap {
   [key: string]: NodeJS.Timeout;
 }
+
+// 新增語言配置
+const translations = {
+  'zh-TW': {
+    title: '畫玩',
+    nickname: '輸入暱稱',
+    roomName: '輸入房間名稱',
+    password: '輸入密碼 (8-16個英文字母或數字)',
+    createRoom: '建立房間',
+    joinRoom: '加入房間',
+    existingRooms: '已建房間',
+    noRooms: '目前沒有房間',
+    people: '人',
+    hints: {
+      title: '提示：',
+      items: [
+        '房間名稱不能為空',
+        '同一房間名稱的人可以一起協作',
+        '加密房間需要輸入正確密碼才能加入'
+      ]
+    },
+    errors: {
+      emptyFields: '請輸入房間名稱和暱稱',
+      passwordRequired: '請設定密碼',
+      passwordFormat: '密碼必須為8-16個英文字母或數字',
+      roomExists: '此房間名稱已存在，請選擇其他名稱或直接加入',
+      createError: '創建房間時發生錯誤，請稍後再試',
+      roomNotFound: '找不到此房間',
+      wrongPassword: '密碼錯誤',
+      kicked: '您已被踢出該房間，無法重新加入',
+      joinError: '加入房間時發生錯誤，請稍後再試'
+    },
+    searchRoom: '搜尋房間...',
+    noSearchResults: '沒有符合的搜尋結果',
+    roomFilter: {
+      all: '全部',
+      public: '公開',
+      private: '私密'
+    }
+  },
+  'en': {
+    title: 'Draw Fun',
+    nickname: 'Enter Nickname',
+    roomName: 'Enter Room Name',
+    password: 'Enter Password (8-16 alphanumeric characters)',
+    createRoom: 'Create Room',
+    joinRoom: 'Join Room',
+    existingRooms: 'Existing Rooms',
+    noRooms: 'No Rooms Available',
+    people: 'people',
+    hints: {
+      title: 'Hints:',
+      items: [
+        'Room name cannot be empty',
+        'People with same room name can collaborate',
+        'Encrypted rooms require correct password to join'
+      ]
+    },
+    errors: {
+      emptyFields: 'Please enter room name and nickname',
+      passwordRequired: 'Please set a password',
+      passwordFormat: 'Password must be 8-16 alphanumeric characters',
+      roomExists: 'Room name already exists, please choose another or join directly',
+      createError: 'Error creating room, please try again later',
+      roomNotFound: 'Room not found',
+      wrongPassword: 'Wrong password',
+      kicked: 'You have been kicked from this room and cannot rejoin',
+      joinError: 'Error joining room, please try again later'
+    },
+    searchRoom: 'Search rooms...',
+    noSearchResults: 'No matching rooms found',
+    roomFilter: {
+      all: 'All',
+      public: 'Public',
+      private: 'Private'
+    }
+  },
+  'ja': {
+    title: '画遊び',
+    nickname: 'ニックネームを入力',
+    roomName: 'ルーム名を入力',
+    password: 'パスワードを入力（8-16文字の英数字）',
+    createRoom: 'ルーム作成',
+    joinRoom: 'ルーム参加',
+    existingRooms: '既存ルーム',
+    noRooms: 'ルームがありません',
+    people: '人',
+    hints: {
+      title: 'ヒント：',
+      items: [
+        'ルーム名は必須です',
+        '同じルーム名の人と協働できます',
+        '暗号化されたルームはパスワードが必要です'
+      ]
+    },
+    errors: {
+      emptyFields: 'ルーム名とニックネームを入力してください',
+      passwordRequired: 'パスワードを設定してください',
+      passwordFormat: 'パスワードは8-16文字の英数字である必要があります',
+      roomExists: 'このルーム名は既に存在します。他の名前を選ぶか、直接参加してください',
+      createError: 'ルーム作成中にエラーが発生しました。後でもう一度お試しください',
+      roomNotFound: 'ルームが見つかりません',
+      wrongPassword: 'パスワードが間違っています',
+      kicked: 'このルームから追放されたため、再参加できまん',
+      joinError: 'ルーム参加中にエラーが発生しました。後でもう一度お試しください'
+    },
+    searchRoom: 'ルームを検索...',
+    noSearchResults: '該当するルームが見つかりません',
+    roomFilter: {
+      all: '全て',
+      public: '公開',
+      private: '非公開'
+    }
+  }
+};
+
+type Language = 'zh-TW' | 'en' | 'ja';
 
 const Home = () => {
   const [roomName, setRoomName] = useState('');
@@ -32,10 +153,17 @@ const Home = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { currentLang, setCurrentLang } = useLanguage();
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roomFilter, setRoomFilter] = useState<'all' | 'public' | 'private'>('all');
+
+  const t = translations[currentLang]; // 獲取當前語言的翻譯
 
   useEffect(() => {
     console.log('Starting rooms listener');
-    
+
     const roomsRef = ref(database, 'rooms');
     console.log('Listening to:', roomsRef.toString());
 
@@ -43,13 +171,13 @@ const Home = () => {
       console.log('Got snapshot, exists:', snapshot.exists());
       const data = snapshot.val();
       console.log('Raw rooms data:', JSON.stringify(data, null, 2));
-      
+
       if (data) {
         const roomList = Object.entries(data).map(([id, room]: [string, any]) => {
           console.log('Processing room:', id, room);
           const userCount = room.users ? Object.keys(room.users).length : 0;
           console.log('Room user count:', userCount);
-          
+
           // 清除該房間之前的計時器（如果存在）
           if (roomTimers.current[id]) {
             clearTimeout(roomTimers.current[id]);
@@ -79,7 +207,7 @@ const Home = () => {
           console.log('Processed room data:', roomData);
           return roomData;
         });
-        
+
         console.log('Setting rooms state with:', roomList);
         setRooms(roomList);
       } else {
@@ -116,7 +244,7 @@ const Home = () => {
     e.preventDefault();
     setError('');
     setPasswordError('');
-    
+
     if (!roomName.trim() || !nickname.trim()) {
       setError('請輸入房間名稱和暱稱');
       return;
@@ -167,7 +295,7 @@ const Home = () => {
     e.preventDefault();
     setError('');
     setPasswordError('');
-    
+
     if (!roomName.trim() || !nickname.trim()) {
       setError('請輸入房間名稱和暱稱');
       return;
@@ -176,7 +304,7 @@ const Home = () => {
     try {
       const roomRef = ref(database, `rooms/${roomName}`);
       const snapshot = await get(roomRef);
-      
+
       if (!snapshot.exists()) {
         setError('找不到此房間');
         return;
@@ -227,7 +355,7 @@ const Home = () => {
     setRoomName(roomId);
     setError('');
     setPasswordError('');
-    
+
     if (isEncrypted) {
       setIsEncrypted(true);
       setPasswordError('此房間需要密碼才能加入');
@@ -250,7 +378,7 @@ const Home = () => {
   // 添加刪除房間函數
   const handleDeleteRoom = async () => {
     if (!selectedRoom) return;
-    
+
     if (deletePassword !== '0323') {
       setDeleteError('密碼錯誤');
       return;
@@ -261,7 +389,7 @@ const Home = () => {
       const roomRef = ref(database, `rooms/${selectedRoom.id}`);
       const snapshot = await get(roomRef);
       const roomData = snapshot.val();
-      
+
       if (roomData?.users && Object.keys(roomData.users).length > 0) {
         setDeleteError('無法刪除有人的房間');
         return;
@@ -279,94 +407,175 @@ const Home = () => {
     }
   };
 
+  useEffect(() => {
+    // 檢查系統預設主題
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setIsDarkMode(prefersDark);
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  }, []);
+
+  // 添加主題切換函數
+  const toggleTheme = () => {
+    setIsDarkMode(!isDarkMode);
+    document.documentElement.setAttribute('data-theme', !isDarkMode ? 'dark' : 'light');
+  };
+
+  const filteredRooms = rooms.filter(room => {
+    const nameMatch = room.name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (roomFilter === 'all') return nameMatch;
+    if (roomFilter === 'public') return nameMatch && !room.isEncrypted;
+    if (roomFilter === 'private') return nameMatch && room.isEncrypted;
+    return nameMatch;
+  });
+
   return (
-    <div 
-      className="min-h-screen flex items-center justify-center bg-gray-100 relative"
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      {/* 已建房間列表 */}
-      <div 
-        className={`absolute top-4 right-4 transition-all duration-300 ${
-          isRoomListCollapsed ? 'w-12' : 'w-80'
-        } bg-black bg-opacity-50 rounded-lg shadow-lg`}
-        onContextMenu={(e) => e.preventDefault()}
+    <div className={`${styles.container} ${styles.root} ${isDarkMode ? styles.dark : ''} flex items-center justify-center relative`}>
+      {/* 主題切換按鈕 */}
+      <button
+        className={`${styles.themeToggle} ${isDarkMode ? styles.dark : ''}`}
+        onClick={toggleTheme}
+        title={isDarkMode ? '切換至亮色模式' : '切換至暗色模式'}
       >
-        <div 
-          className="flex items-center justify-between p-4"
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <h3 className={`text-white text-lg font-medium ${
-            isRoomListCollapsed ? 'hidden' : 'block'
-          }`}>
-            已建房間 ({rooms?.length || 0})
-          </h3>
+        {isDarkMode ? <BsSun className={styles.sunIcon} /> : <BsMoon className={styles.moonIcon} />}
+      </button>
+
+      {/* 已建房間列表 */}
+      <div className={`${styles.roomList} ${isRoomListCollapsed ? styles.collapsed : ''} absolute top-4 right-4 transition-all duration-300`}>
+        <div className={styles.header}>
           <button
             onClick={() => setIsRoomListCollapsed(!isRoomListCollapsed)}
-            className="text-white hover:text-gray-300 transition-colors"
+            className="transition-colors"
+            title={isRoomListCollapsed ? "展開房間列表" : "收合房間列表"}
           >
             {isRoomListCollapsed ? (
-              <AiOutlineRight className="w-6 h-6" />
+              <AiOutlineLeft />
             ) : (
-              <AiOutlineLeft className="w-6 h-6" />
+              <AiOutlineRight />
             )}
           </button>
+          <h3 className={isRoomListCollapsed ? 'hidden' : 'block'}>
+            {t.existingRooms} ({rooms?.length || 0})
+          </h3>
+          
+          <div className={`${styles.headerLanguageSelector} ${isRoomListCollapsed ? 'hidden' : 'block'}`}>
+            <button
+              className={styles.settingsButton}
+              onClick={() => setShowLangMenu(!showLangMenu)}
+              title="語言設定"
+            >
+              <IoSettingsSharp />
+            </button>
+            
+            {showLangMenu && (
+              <div className={styles.headerLanguageMenu}>
+                <div className={styles.languageOptions}>
+                  <button onClick={() => { setCurrentLang('zh-TW'); setShowLangMenu(false); }}>
+                    繁體中文
+                  </button>
+                  <button onClick={() => { setCurrentLang('en'); setShowLangMenu(false); }}>
+                    English
+                  </button>
+                  <button onClick={() => { setCurrentLang('ja'); setShowLangMenu(false); }}>
+                    日本語
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
-        <ul 
-          className={`space-y-2 px-4 pb-4 ${isRoomListCollapsed ? 'hidden' : 'block'}`}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          {rooms && rooms.length > 0 ? (
-            rooms.map((room) => (
-              <li 
-                key={room.id} 
-                className="flex justify-between items-center text-white text-sm p-2 hover:bg-white/10 rounded cursor-pointer" 
-                onClick={() => handleRoomClick(room.name, room.isEncrypted)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (room.userCount === 0) {
-                    handleContextMenu(e, room);
-                  }
-                }}
-              >
-                <span 
-                  className="flex-1"
-                  onContextMenu={(e) => e.preventDefault()}
-                >{room.name}</span>
-                <span 
-                  className="mx-2"
-                  onContextMenu={(e) => e.preventDefault()}
+        <div className={styles.roomContent}>
+          {!isRoomListCollapsed && (
+            <>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t.searchRoom}
+                className={styles.searchInput}
+              />
+              <div className={styles.roomFilters}>
+                <button
+                  onClick={() => setRoomFilter('all')}
+                  className={`${styles.filterButton} ${roomFilter === 'all' ? styles.active : ''}`}
                 >
-                  {room.isEncrypted ? 
-                    <AiOutlineLock className="text-yellow-500" /> : 
+                  {t.roomFilter.all}
+                </button>
+                <button
+                  onClick={() => setRoomFilter('public')}
+                  className={`${styles.filterButton} ${roomFilter === 'public' ? styles.active : ''}`}
+                >
+                  {t.roomFilter.public}
+                </button>
+                <button
+                  onClick={() => setRoomFilter('private')}
+                  className={`${styles.filterButton} ${roomFilter === 'private' ? styles.active : ''}`}
+                >
+                  {t.roomFilter.private}
+                </button>
+              </div>
+            </>
+          )}
+          
+          {filteredRooms.length > 0 ? (
+            filteredRooms.map((room) => (
+              <li
+                key={room.id}
+                className={styles.roomItem}
+                onClick={() => handleRoomClick(room.name, room.isEncrypted)}
+                onContextMenu={(e) => handleContextMenu(e, room)}
+              >
+                <div className={styles.roomNameSection}>
+                  <span className={styles.roomName}>{room.name}</span>
+                  {room.isEncrypted ? (
+                    <AiOutlineLock className="text-yellow-500" />
+                  ) : (
                     <AiOutlineUnlock className="text-green-500" />
-                  }
+                  )}
+                </div>
+                <span className={styles.userCount}>
+                  {room.userCount} {t.people}
                 </span>
-                <span
-                  onContextMenu={(e) => e.preventDefault()}
-                >{room.userCount} 人</span>
               </li>
             ))
           ) : (
-            <li 
-              className="text-white text-sm text-center"
-              onContextMenu={(e) => e.preventDefault()}
-            >目前沒有房間</li>
+            <div className={styles.roomItem}>
+              {searchQuery ? t.noSearchResults : t.noRooms}
+            </div>
           )}
-        </ul>
+        </div>
       </div>
 
-      <div className="bg-white p-8 rounded-lg shadow-lg w-96">
-        <h1 className="text-2xl font-bold mb-6 text-center">白板協作</h1>
-        
+      {/* 將語言選單移到外層 */}
+      {showLangMenu && (
+        <>
+          <div className={styles.languageMenuOverlay} onClick={() => setShowLangMenu(false)} />
+          <div className={styles.languageMenuContainer}>
+            <div className={styles.languageMenu}>
+              <button onClick={() => { setCurrentLang('zh-TW'); setShowLangMenu(false); }}>
+                繁體中文
+              </button>
+              <button onClick={() => { setCurrentLang('en'); setShowLangMenu(false); }}>
+                English
+              </button>
+              <button onClick={() => { setCurrentLang('ja'); setShowLangMenu(false); }}>
+                日本語
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className={styles.formContainer}>
+        <h1 className={styles.title}>{t.title}</h1>
+
         <form className="mb-6">
           <input
             type="text"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            placeholder="輸入暱稱"
-            className="w-full px-4 py-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder={t.nickname}
+            className={styles.inputField}
           />
           <div className="flex gap-2 mb-4">
             <input
@@ -376,17 +585,13 @@ const Home = () => {
                 setRoomName(e.target.value);
                 setError('');
               }}
-              placeholder="輸入房間名稱"
-              className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={t.roomName}
+              className={styles.inputField}
             />
             <button
               type="button"
               onClick={() => setIsEncrypted(!isEncrypted)}
-              className={`p-2 rounded-lg transition-colors ${
-                isEncrypted 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-100 text-gray-600'
-              }`}
+              className={`${styles.encryptButton} ${isEncrypted ? styles.encrypted : styles.unencrypted}`}
               title={isEncrypted ? '取消加密' : '設定加密'}
             >
               {isEncrypted ? <AiOutlineLock size={24} /> : <AiOutlineUnlock size={24} />}
@@ -401,58 +606,50 @@ const Home = () => {
                 setPassword(e.target.value);
                 setPasswordError('');
               }}
-              placeholder="輸入密碼 (8-16個英文字母或數字)"
-              className="w-full px-4 py-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={t.password}
+              className={styles.inputField}
             />
           )}
 
-          {error && (
-            <div className="mb-4 text-red-500 text-sm">
-              {error}
-            </div>
-          )}
-          {passwordError && (
-            <div className="mb-4 text-red-500 text-sm">
-              {passwordError}
-            </div>
-          )}
+          {error && <div className={styles.errorText}>{error}</div>}
+          {passwordError && <div className={styles.errorText}>{passwordError}</div>}
+
 
           <div className="flex gap-4">
             <button
               type="button"
               onClick={handleCreateRoom}
-              className="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors"
+              className={`${styles.button} ${styles.primary} flex-1`}
             >
-              建立房間
+              {t.createRoom}
             </button>
             <button
               type="button"
               onClick={handleJoinRoom}
-              className="flex-1 bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition-colors"
+              className={`${styles.button} ${styles.secondary} flex-1`}
             >
-              加入房間
+              {t.joinRoom}
             </button>
           </div>
         </form>
-        
-        <div className="mt-4 text-sm text-gray-600">
-          <p>提示：</p>
-          <ul className="list-disc pl-5 mt-2">
-            <li>房間名稱不能為空</li>
-            <li>可以分享網址給其他人加入</li>
-            <li>同一房間名稱的人可以一起協作</li>
-            <li>加密房間需要輸入正確密碼才能加入</li>
+
+        <div className={styles.hintText}>
+          <p>{t.hints.title}</p>
+          <ul>
+            {t.hints.items.map((hint, index) => (
+              <li key={index}>{hint}</li>
+            ))}
           </ul>
         </div>
       </div>
 
       {/* 右鍵選單 */}
       {showContextMenu && (
-        <div 
+        <div
           className="fixed bg-white rounded-lg shadow-lg py-2 z-50"
-          style={{ 
-            left: contextMenuPosition.x, 
-            top: contextMenuPosition.y 
+          style={{
+            left: contextMenuPosition.x,
+            top: contextMenuPosition.y
           }}
         >
           <button
@@ -473,7 +670,7 @@ const Home = () => {
           <div className="bg-white rounded-lg p-6 w-96">
             <h3 className="text-lg font-medium mb-4">刪除房間</h3>
             <p className="mb-4">&quot;{selectedRoom?.name}&quot;請輸入管理員密碼以刪除房間</p>
-            
+
             <input
               type="password"
               value={deletePassword}
@@ -484,11 +681,11 @@ const Home = () => {
               placeholder="輸入密碼"
               className="w-full px-4 py-2 border rounded-lg mb-4"
             />
-            
+
             {deleteError && (
               <p className="text-red-500 text-sm mb-4">{deleteError}</p>
             )}
-            
+
             <div className="flex justify-end gap-2">
               <button
                 className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"

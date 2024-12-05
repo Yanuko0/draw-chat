@@ -4,6 +4,8 @@ import dynamic from 'next/dynamic';
 import Toolbar from '../../components/Toolbar';
 import { ref, get, set, onValue } from 'firebase/database';
 import { database } from '../../config/firebase';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { translations } from '../../translations';
 
 const Canvas = dynamic(() => import('../../components/Canvas'), {
   ssr: false
@@ -18,6 +20,8 @@ interface User {
 const WhiteboardPage = () => {
   const router = useRouter();
   const { roomId, nickname } = router.query as { roomId: string; nickname: string };
+  const { currentLang } = useLanguage();
+  const t = translations[currentLang];
 
   const [showUserContextMenu, setShowUserContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });

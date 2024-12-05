@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBnShUDyTKE8UjgiQYA1Os830TxKoWMKVQ",
@@ -15,3 +16,4 @@ const firebaseConfig = {
 // 確保只初始化一次
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const database = getDatabase(app);
+export const auth = getAuth(app);
