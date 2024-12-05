@@ -14,7 +14,7 @@ import { Canvas as FabricCanvas } from 'fabric';
 import * as fabric from 'fabric';
 import StickerPicker from '../../components/StickerPicker';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/router';
 
 interface CanvasProps {
   roomId: string;
