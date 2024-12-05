@@ -157,7 +157,7 @@ const Toolbar = () => {
                       'pencil': '鉛筆',
                       'brush': '毛筆',
                       'marker': '麥克筆',
-                      'highlighter': '螢��筆',
+                      'highlighter': '螢光筆',
                       'ink': '墨水筆',
                       'eraser': '橡皮擦',
                       'select': '選擇'
