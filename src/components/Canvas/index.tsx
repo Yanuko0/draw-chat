@@ -128,7 +128,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       }
     });
     return () => unsubscribe();
-  }, [roomId]);
+  }, [roomId, history]);
 
   // 監聽 Firebase 中的圖片數據
   useEffect(() => {

@@ -9,9 +9,15 @@ const Canvas = dynamic(() => import('../../components/Canvas'), {
   ssr: false
 });
 
+// 添加類型定義
+interface User {
+  isCreator: boolean;
+  joinTime: number;
+}
+
 const WhiteboardPage = () => {
   const router = useRouter();
-  const { roomId, nickname } = router.query;
+  const { roomId, nickname } = router.query as { roomId: string; nickname: string };
 
   const [showUserContextMenu, setShowUserContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
@@ -20,11 +26,10 @@ const WhiteboardPage = () => {
   const [isKicked, setIsKicked] = useState(false);
 
   useEffect(() => {
-    // 如果沒有暱稱，重定向回首頁
     if (!nickname && router.isReady) {
       router.push('/');
     }
-  }, [nickname, router.isReady]);
+  }, [nickname, router, router.isReady]);
 
   useEffect(() => {
     // 檢查當前用戶是否為創房者

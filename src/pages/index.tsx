@@ -102,7 +102,7 @@ const Home = () => {
       Object.values(roomTimers.current).forEach(timer => clearTimeout(timer));
       roomTimers.current = {};
     };
-  }, []);
+  }, [rooms]);
 
   // 在 return 之前添加一個檢查
   console.log('Rendering with rooms:', rooms);
@@ -472,7 +472,7 @@ const Home = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96">
             <h3 className="text-lg font-medium mb-4">刪除房間</h3>
-            <p className="mb-4">"{selectedRoom?.name}"請輸入管理員密碼以刪除房間</p>
+            <p className="mb-4">&quot;{selectedRoom?.name}&quot;請輸入管理員密碼以刪除房間</p>
             
             <input
               type="password"
