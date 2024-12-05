@@ -26,6 +26,12 @@ const Home = () => {
   const router = useRouter();
   const roomTimers = useRef<TimerMap>({});
   const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     console.log('Starting rooms listener');
@@ -135,18 +141,22 @@ const Home = () => {
         return;
       }
 
-      // 先創建房間的配置
+      // 創建房間時設置配置和創房者
       await set(ref(database, `rooms/${roomName}/config`), {
         isEncrypted: isEncrypted,
-        password: isEncrypted ? password : null
+        password: isEncrypted ? password : null,
+        creator: nickname
       });
 
-      // 再添加用戶
-      await set(ref(database, `rooms/${roomName}/users/${nickname}`), true);
+      // 添加創房者到用戶列表
+      await set(ref(database, `rooms/${roomName}/users/${nickname}`), {
+        isCreator: true,
+        joinTime: Date.now()
+      });
 
       router.push({
         pathname: `/whiteboard/${roomName}`,
-        query: { nickname }
+        query: { nickname, isCreator: 'true' }
       });
     } catch (err) {
       setError('創建房間時發生錯誤，請稍後再試');
@@ -168,45 +178,41 @@ const Home = () => {
       const snapshot = await get(roomRef);
       
       if (!snapshot.exists()) {
-        setError('此房間不存在，請確認房間名稱或建立新房間');
+        setError('找不到此房間');
         return;
       }
 
-      // 先檢查房間是否需要密碼
-      const roomConfigRef = ref(database, `rooms/${roomName}/config`);
-      const configSnapshot = await get(roomConfigRef);
-      const roomConfig = configSnapshot.val();
-      
-      console.log('Room config:', roomConfig);
-
-      if (roomConfig?.isEncrypted) {
-        console.log('Room is encrypted');
-        setIsEncrypted(true);
-        
+      const roomData = snapshot.val();
+      if (roomData.config?.isEncrypted) {
         if (!password) {
-          console.log('Password required');
-          setPasswordError('此房間需要密碼才能加入');
+          setPasswordError('請輸入密碼');
           return;
         }
-        
-        if (password !== roomConfig.password) {
-          console.log('Wrong password');
+        if (password !== roomData.config.password) {
           setPasswordError('密碼錯誤');
-          setPassword('');
           return;
         }
       }
 
-      // 密碼正確或非加密房間才能繼續
-      await set(ref(database, `rooms/${roomName}/users/${nickname}`), true);
+      // 檢查是否被踢出
+      if (roomData.kickedUsers?.[nickname]) {
+        setError('您已被踢出該房間，無法重新加入');
+        return;
+      }
+
+      // 加入房間
+      await set(ref(database, `rooms/${roomName}/users/${nickname}`), {
+        isCreator: false,
+        joinTime: Date.now()
+      });
 
       router.push({
         pathname: `/whiteboard/${roomName}`,
-        query: { nickname }
+        query: { nickname, isCreator: 'false' }
       });
     } catch (err) {
       console.error('Error:', err);
-      setError('檢查房間時發生錯誤，請稍後再試');
+      setError('加入房間時發生錯誤，請稍後再試');
     }
   };
 
@@ -231,13 +237,64 @@ const Home = () => {
     }
   };
 
+  // 添加右鍵選單處理函數
+  const handleContextMenu = (e: React.MouseEvent, room: Room) => {
+    e.preventDefault();
+    if (room.userCount > 0) return; // 如果房間有人，不顯示選單
+
+    setContextMenuPosition({ x: e.pageX, y: e.pageY });
+    setSelectedRoom(room);
+    setShowContextMenu(true);
+  };
+
+  // 添加刪除房間函數
+  const handleDeleteRoom = async () => {
+    if (!selectedRoom) return;
+    
+    if (deletePassword !== '0323') {
+      setDeleteError('密碼錯誤');
+      return;
+    }
+
+    try {
+      // 再次確認房間是否為空
+      const roomRef = ref(database, `rooms/${selectedRoom.id}`);
+      const snapshot = await get(roomRef);
+      const roomData = snapshot.val();
+      
+      if (roomData?.users && Object.keys(roomData.users).length > 0) {
+        setDeleteError('無法刪除有人的房間');
+        return;
+      }
+
+      // 刪除房間
+      await set(roomRef, null);
+      setShowDeleteDialog(false);
+      setDeletePassword('');
+      setDeleteError('');
+      setSelectedRoom(null);
+    } catch (error) {
+      console.error('刪除房間時發生錯誤:', error);
+      setDeleteError('刪除房間時發生錯誤');
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 relative">
+    <div 
+      className="min-h-screen flex items-center justify-center bg-gray-100 relative"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {/* 已建房間列表 */}
-      <div className={`absolute top-4 right-4 transition-all duration-300 ${
-        isRoomListCollapsed ? 'w-12' : 'w-80'
-      } bg-black bg-opacity-50 rounded-lg shadow-lg`}>
-        <div className="flex items-center justify-between p-4">
+      <div 
+        className={`absolute top-4 right-4 transition-all duration-300 ${
+          isRoomListCollapsed ? 'w-12' : 'w-80'
+        } bg-black bg-opacity-50 rounded-lg shadow-lg`}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <div 
+          className="flex items-center justify-between p-4"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           <h3 className={`text-white text-lg font-medium ${
             isRoomListCollapsed ? 'hidden' : 'block'
           }`}>
@@ -255,28 +312,47 @@ const Home = () => {
           </button>
         </div>
         
-        <ul className={`space-y-2 px-4 pb-4 ${
-          isRoomListCollapsed ? 'hidden' : 'block'
-        }`}>
+        <ul 
+          className={`space-y-2 px-4 pb-4 ${isRoomListCollapsed ? 'hidden' : 'block'}`}
+          onContextMenu={(e) => e.preventDefault()}
+        >
           {rooms && rooms.length > 0 ? (
             rooms.map((room) => (
               <li 
                 key={room.id} 
                 className="flex justify-between items-center text-white text-sm p-2 hover:bg-white/10 rounded cursor-pointer" 
                 onClick={() => handleRoomClick(room.name, room.isEncrypted)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (room.userCount === 0) {
+                    handleContextMenu(e, room);
+                  }
+                }}
               >
-                <span className="flex-1">{room.name}</span>
-                <span className="mx-2">
+                <span 
+                  className="flex-1"
+                  onContextMenu={(e) => e.preventDefault()}
+                >{room.name}</span>
+                <span 
+                  className="mx-2"
+                  onContextMenu={(e) => e.preventDefault()}
+                >
                   {room.isEncrypted ? 
                     <AiOutlineLock className="text-yellow-500" /> : 
                     <AiOutlineUnlock className="text-green-500" />
                   }
                 </span>
-                <span>{room.userCount} 人</span>
+                <span
+                  onContextMenu={(e) => e.preventDefault()}
+                >{room.userCount} 人</span>
               </li>
             ))
           ) : (
-            <li className="text-white text-sm text-center">目前沒有房間</li>
+            <li 
+              className="text-white text-sm text-center"
+              onContextMenu={(e) => e.preventDefault()}
+            >目前沒有房間</li>
           )}
         </ul>
       </div>
@@ -369,6 +445,79 @@ const Home = () => {
           </ul>
         </div>
       </div>
+
+      {/* 右鍵選單 */}
+      {showContextMenu && (
+        <div 
+          className="fixed bg-white rounded-lg shadow-lg py-2 z-50"
+          style={{ 
+            left: contextMenuPosition.x, 
+            top: contextMenuPosition.y 
+          }}
+        >
+          <button
+            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-red-600"
+            onClick={() => {
+              setShowDeleteDialog(true);
+              setShowContextMenu(false);
+            }}
+          >
+            刪除房間
+          </button>
+        </div>
+      )}
+
+      {/* 刪除確認對話框 */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96">
+            <h3 className="text-lg font-medium mb-4">刪除房間</h3>
+            <p className="mb-4">"{selectedRoom?.name}"請輸入管理員密碼以刪除房間</p>
+            
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={(e) => {
+                setDeletePassword(e.target.value);
+                setDeleteError('');
+              }}
+              placeholder="輸入密碼"
+              className="w-full px-4 py-2 border rounded-lg mb-4"
+            />
+            
+            {deleteError && (
+              <p className="text-red-500 text-sm mb-4">{deleteError}</p>
+            )}
+            
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setDeletePassword('');
+                  setDeleteError('');
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="px-4 py-2 bg-red-500 text-white hover:bg-red-600 rounded-lg"
+                onClick={handleDeleteRoom}
+              >
+                刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 點擊其他地方關閉右鍵選單 */}
+      {showContextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowContextMenu(false)}
+        />
+      )}
     </div>
   );
 };

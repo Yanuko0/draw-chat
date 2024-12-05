@@ -4,7 +4,7 @@ import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Circle, Li
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useCanvasStore } from '../../store/useCanvasStore';
 import { database } from '../../config/firebase';
-import { ref, onValue, set, push, serverTimestamp } from 'firebase/database';
+import { ref, onValue, set, push, serverTimestamp, get } from 'firebase/database';
 import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload, BiUndo, BiRedo } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
 import debounce from 'lodash/debounce';
@@ -14,6 +14,7 @@ import { Canvas as FabricCanvas } from 'fabric';
 import * as fabric from 'fabric';
 import StickerPicker from '../../components/StickerPicker';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 interface CanvasProps {
   roomId: string;
@@ -96,6 +97,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [showTutorial, setShowTutorial] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showUserContextMenu, setShowUserContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [isCreator, setIsCreator] = useState(false);
+  const [isKicked, setIsKicked] = useState(false);
+  const router = useRouter();
 
   // Firebase 監聽
   useEffect(() => {
@@ -1296,12 +1303,53 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     return nextLines?.some(line => line.userId === nickname);
   }, [currentStep, history, nickname]);
 
+  // 添加檢查創房者的 useEffect
+  useEffect(() => {
+    const checkCreator = async () => {
+      const configRef = ref(database, `rooms/${roomId}/config`);
+      const snapshot = await get(configRef);
+      const config = snapshot.val();
+      setIsCreator(config?.creator === nickname);
+    };
+
+    checkCreator();
+  }, [roomId, nickname]);
+
+  // 添加踢出用戶的處理函數
+  const handleKickUser = async (userToKick: string) => {
+    if (!isCreator || userToKick === nickname) return;
+
+    try {
+      // 刪除該用戶
+      await set(ref(database, `rooms/${roomId}/users/${userToKick}`), null);
+      // 添加踢出記錄
+      await set(ref(database, `rooms/${roomId}/kickedUsers/${userToKick}`), true);
+      setShowUserContextMenu(false);
+    } catch (error) {
+      console.error('踢出用戶時發生錯誤:', error);
+    }
+  };
+
+  // 添加監聽被踢出的 useEffect
+  useEffect(() => {
+    if (!roomId || !nickname) return;
+
+    const kickedRef = ref(database, `rooms/${roomId}/kickedUsers/${nickname}`);
+    const unsubscribe = onValue(kickedRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setIsKicked(true);
+        // 顯示被踢出提示，然後導向回首頁
+        setTimeout(() => {
+          router.push('/');
+        }, 3000); // 3秒後自動返回首頁
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId, nickname, router]);
+
   return (
-    <div 
-      className="relative w-full h-screen"
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-    >
+    <div className="relative">
       <Stage
         ref={stageRef}
         width={window.innerWidth}
@@ -1723,7 +1771,18 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 <p className="text-white text-sm mb-1">在線成員：</p>
                 <ul className="space-y-1">
                   {users.map((user, index) => (
-                    <li key={index} className="text-white text-sm pl-2">
+                    <li 
+                      key={index} 
+                      className="text-white text-sm pl-2 relative"
+                      onContextMenu={(e) => {
+                        if (isCreator && user !== nickname) {
+                          e.preventDefault();
+                          setContextMenuPosition({ x: e.pageX, y: e.pageY });
+                          setSelectedUser(user);
+                          setShowUserContextMenu(true);
+                        }
+                      }}
+                    >
                       {user}
                     </li>
                   ))}
@@ -1748,6 +1807,41 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         style={{ display: 'none' }}
         id="imageUpload"
       />
+
+      {/* 添加右鍵選單 */}
+      {showUserContextMenu && selectedUser && (
+        <>
+          <div
+            className="fixed bg-white rounded-lg shadow-lg py-2 z-50"
+            style={{
+              left: contextMenuPosition.x,
+              top: contextMenuPosition.y
+            }}
+          >
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 text-red-600"
+              onClick={() => handleKickUser(selectedUser)}
+            >
+              踢出用戶
+            </button>
+          </div>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setShowUserContextMenu(false)}
+          />
+        </>
+      )}
+
+      {/* 被踢出提示 */}
+      {isKicked && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 text-center">
+            <h3 className="text-xl font-medium mb-4">您已被踢出房間</h3>
+            <p className="mb-4">房主已將您移出此房間</p>
+            <p className="text-sm text-gray-500">3秒後自動返回首頁...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
