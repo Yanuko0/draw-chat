@@ -212,7 +212,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
     const baseWidthMultiplier = {
-      mouse: 1.0,
+      mouse: 1.5,
       touch: 1.5,
       pen: 1.2
     }[deviceType];
@@ -228,7 +228,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         return {
           tension: 0.2 - tensionAdjustment,
           opacity: deviceType === 'pen' ? 0.95 : 0.85,
-          strokeWidth: strokeWidth * (deviceType === 'pen' ? 1.0 : 0.8) * baseWidthMultiplier,
+          strokeWidth: strokeWidth * (deviceType === 'mouse' ? 1.2 : 0.8) * baseWidthMultiplier,
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
@@ -330,6 +330,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       }
       
       const deviceType = getDeviceType(evt);
+      if (deviceType === 'mouse') {  // 只針對滑鼠修改
+        return 1;  // 給滑鼠一個固定較高的壓力值
+      }
+      
+      // 其他設備保持原邏輯
       const toolPressureRanges = {
         pencil: {
           mouse: { base: 0.5, min: 0.4, max: 0.6 },
@@ -426,6 +431,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
   }, [tool, strokeColor, dragMode, roomId, nickname]);
 
+  const debouncedUpdate = useCallback(
+    debounce((path: string, data: any) => {
+      const dbRef = ref(database, path);
+      set(dbRef, data);
+    }, 6.94),
+    []
+  );
+
   const handlePointerMove = useCallback((e: any) => {
     e.evt.preventDefault();
     
@@ -443,21 +456,18 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
     
-    // 計算兩點之間的距離
     const dx = pos.x - lastPointerPosition.x;
     const dy = pos.y - lastPointerPosition.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // 如果距離太大，插入中間點
-    const minDistance = 2; // 最小距離閾值
-    const maxDistance = 10; // 最大距離閾值
+    const minDistance = 2;
+    const maxDistance = 10;
     
     if (distance > minDistance) {
       const angle = Math.atan2(dy, dx);
       const steps = Math.ceil(distance / minDistance);
       const newPoints = [];
       
-      // 在兩點之間插入額外的點
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
         const x = lastPointerPosition.x + dx * t;
@@ -465,20 +475,15 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         newPoints.push(x, y);
       }
 
-      // 根據工具類型設置壓力
-      let pressure;
-      if (e.evt.pointerType === 'pen') {
-        pressure = Math.max(0.15, e.evt.pressure * 1.5);
-      } else if (e.evt.pointerType === 'touch') {
-        pressure = 0.5; // 觸控預設壓力
+      let strokeWidth;
+      if (e.evt.pointerType === 'mouse') {
+        strokeWidth = currentLine.strokeWidth;
       } else {
-        pressure = 0.5; // 滑鼠預設壓力
+        const pressure = e.evt.pointerType === 'pen' 
+          ? Math.max(0.15, e.evt.pressure * 1.5)
+          : 0.5;
+        strokeWidth = currentLine.strokeWidth * pressure;
       }
-
-      // 橡皮擦使用固定寬度
-      const strokeWidth = currentLine.tool === 'eraser' 
-        ? currentLine.strokeWidth 
-        : currentLine.strokeWidth * pressure;
 
       const newLine = {
         ...currentLine,
@@ -489,10 +494,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       setCurrentLine(newLine);
       setLastPointerPosition({ x: pos.x, y: pos.y });
 
-      const roomRef = ref(database, `rooms/${roomId}/lines/${lines.length}`);
-      set(roomRef, newLine);
+      debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
     }
-  }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length]);
+  }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length, debouncedUpdate]);
 
   const handlePointerUp = useCallback((e: any) => {
     e.evt.preventDefault();
@@ -661,15 +665,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       document.removeEventListener('mousedown', preventDefault);
     };
   }, []);
-
-  // 使用防抖優化 Firebase 更新
-  const debouncedUpdate = useCallback(
-    debounce((path: string, data: any) => {
-      const dbRef = ref(database, path);
-      set(dbRef, data);
-    }, 6.94),  //144fps
-    []
-  );
 
   // 優化圖片渲染
   const imageCache = useMemo(() => {
