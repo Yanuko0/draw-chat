@@ -146,7 +146,7 @@ const Home = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const router = useRouter();
   const roomTimers = useRef<TimerMap>({});
-  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(false);
+  const [isRoomListCollapsed, setIsRoomListCollapsed] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
