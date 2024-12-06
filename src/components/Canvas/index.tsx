@@ -539,7 +539,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const minDistance = 4;
 
       if (distance > minDistance) {
-        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-2000); // 只保留最後 50 個點
+        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-3000); // 只保留最後 50 個點
 
         const newLine = {
           ...currentLine,
@@ -633,24 +633,23 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const startTime = performance.now();
       const roomRef = ref(database, `rooms/${roomId}/lines`);
       
-      // 使用 query 限制讀取數量
-      const queryRef = query(roomRef, limitToLast(2000));
-      const snapshot = await get(queryRef);
+      // 獲取所有線條
+      const snapshot = await get(roomRef);
       const lines = snapshot.val();
       
       if (lines) {
-        // 使用 Object.entries 的替代方法
+        // 找出所有當前用戶的線條
         const entries = Object.keys(lines).filter(key => 
           lines[key].userId === nickname
         );
         
-        // 批量更新
+        // 批量更新，將所有當前用戶的線條設為 null
         const updates = entries.reduce((acc, key) => {
           acc[`rooms/${roomId}/lines/${key}`] = null;
           return acc;
         }, {} as Record<string, any>);
         
-        // 使用單次更新替代多次設置
+        // 單次更新
         await update(ref(database), updates);
         
         // 更新本地狀態
