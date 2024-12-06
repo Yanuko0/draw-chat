@@ -1283,20 +1283,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   // 修改聊天室容器樣式
   const getChatContainerStyles = () => {
-    if (isMobile()) {
-      return `fixed transition-all duration-300 
-        ${isChatHidden ? 'translate-y-full' : 'translate-y-0'} 
-        bottom-0 
-        left-0 right-0 
-        w-full 
-        max-h-[60vh] 
-        ${commonBgStyle}
-        rounded-t-lg 
-        shadow-lg 
-        z-40
-        text-base`;
-    }
-    
     return `fixed bottom-3 transition-all duration-300 
       ${isChatHidden ? '-left-[280px]' : 'left-3'} 
       w-[310px] 
