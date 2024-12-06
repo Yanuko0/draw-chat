@@ -2077,16 +2077,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           </>
         )}
 
-        {/* 輸入框 */}
-        <div className="flex items-center gap-2 p-2 border-t border-gray-700">
-          {/* 修改 StickerPicker 容器樣式 */}
-          <div className="min-w-[30px] flex-shrink-0"> {/* 添加最小寬度和防止收縮 */}
+        {/* 輸入框區域 */}
+        <div className="flex items-center gap-1 p-2 border-t border-gray-700">
+          {/* Sticker Picker */}
+          <div className="w-[30px] flex-shrink-0">
             <StickerPicker 
               onStickerSelect={handleStickerSelect} 
               roomId={roomId}
             />
           </div>
           
+          {/* 輸入框 */}
           <input
             type="text"
             value={newMessage}
@@ -2098,14 +2099,15 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               }
             }}
             placeholder="message..."
-            className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 min-w-0 px-2 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           
+          {/* 發送按鈕 */}
           <button
             onClick={handleSendMessage}
-            className="min-w-[40px] flex-shrink-0 px-3 py-1.5 bg-[#87A9B2] text-white rounded-lg hover:bg-[#6B8B95] 
-                       transition-colors duration-200 flex items-center gap-1.5 
-                       shadow-md hover:shadow-lg active:scale-95 transform"
+            className="w-[32px] h-[32px] flex-shrink-0 bg-[#87A9B2] text-white rounded-lg hover:bg-[#6B8B95] 
+                     transition-colors duration-200 flex items-center justify-center
+                     shadow-md hover:shadow-lg active:scale-95 transform"
           >
             <IoSend size={16} className="text-white" />
           </button>
@@ -2220,7 +2222,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       )}
 
       {/* 添加聊天室切換按鈕 */}
-      {getChatToggleButton()}
+      {/* {getChatToggleButton()} */}
     </div>
   );
 };
