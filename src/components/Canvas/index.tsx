@@ -442,7 +442,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     debounce((path: string, data: any) => {
       const dbRef = ref(database, path);
       set(dbRef, data);
-    }, 100),
+    }, 200),
     []
   );
 
@@ -468,11 +468,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const dy = pos.y - lastPointerPosition.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      const minDistance = 2;
+      const minDistance = 4;
       
       if (distance > minDistance) {
-        const newPoints = [...currentLine.points, pos.x, pos.y];
-        
+        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-100); // 只保留最後 50 個點
+    
         const newLine = {
           ...currentLine,
           points: newPoints,
@@ -482,7 +482,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         setCurrentLine(newLine);
         setLastPointerPosition({ x: pos.x, y: pos.y });
 
-        if (newPoints.length % 4 === 0) {
+        if (newPoints.length % 8 === 0) {
           debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
         }
 
@@ -726,8 +726,25 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, [images]);
 
   // 使用 memo 優化渲染
-  const renderLines = useMemo(() => (
-    lines.map((line, i) => (
+  const renderLines = useMemo(() => {
+    // 只渲染視窗範圍內的線條
+    const visibleLines = lines.filter(line => {
+      if (!line.points.length) return false;
+      
+      // 簡單的視窗範圍檢查
+      const [x, y] = line.points;
+      const viewportX = -position.x / scale;
+      const viewportY = -position.y / scale;
+      const viewportWidth = window.innerWidth / scale;
+      const viewportHeight = window.innerHeight / scale;
+      
+      return x >= viewportX - 100 && 
+             x <= viewportX + viewportWidth + 100 && 
+             y >= viewportY - 100 && 
+             y <= viewportY + viewportHeight + 100;
+    });
+  
+    return visibleLines.map((line, i) => (
       <Line
         key={i}
         points={line.points}
@@ -741,9 +758,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         globalCompositeOperation={
           line.tool === 'eraser' ? 'destination-out' : 'source-over'
         }
+        perfectDrawEnabled={false}
+        listening={false}
       />
-    ))
-  ), [lines, scale]);
+    ));
+  }, [lines, scale, position]);
 
   const handleDeleteImage = useCallback((imageId: string) => {
     const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
@@ -1076,6 +1095,28 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   };
+
+  //清理不必要的監聽
+  useEffect(() => {
+    const cleanupListeners: (() => void)[] = [];
+    
+    // Firebase 監聽
+    const roomRef = ref(database, `rooms/${roomId}/lines`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // 限制歷史記錄長度
+        const newLines = Object.values(data).slice(-1000) as LineWithUser[];
+        setLines(newLines);
+      }
+    });
+    
+    cleanupListeners.push(unsubscribe);
+    
+    return () => {
+      cleanupListeners.forEach(cleanup => cleanup());
+    };
+  }, [roomId]);
 
   const handleStickerSelect = async (stickerUrl: string) => {
     try {

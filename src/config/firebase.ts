@@ -3,14 +3,14 @@ import { getDatabase } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBnShUDyTKE8UjgiQYA1Os830TxKoWMKVQ",
-  authDomain: "draw-7774d.firebaseapp.com",
-  databaseURL: "https://draw-7774d-default-rtdb.firebaseio.com",
-  projectId: "draw-7774d",
-  storageBucket: "draw-7774d.firebasestorage.app",
-  messagingSenderId: "853341293278",
-  appId: "1:853341293278:web:4b7ee01259c97f5395904f",
-  measurementId: "G-TD509FKTPS"
+  apiKey: "AIzaSyCOqBRh9kzXBHbDt5CrAEWdZxGMM_0tpBU",
+  authDomain: "chiikawa-draw-chat.firebaseapp.com",
+  databaseURL: "https://chiikawa-draw-chat-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "chiikawa-draw-chat",
+  storageBucket: "chiikawa-draw-chat.firebasestorage.app",
+  messagingSenderId: "737967188728",
+  appId: "1:737967188728:web:89f96f4978a127cca4290d",
+  measurementId: "G-KMRDL2DQ37"
 };
 
 // 確保只初始化一次
