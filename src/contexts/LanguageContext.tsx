@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useLayoutEffect } from 'react';
 import { auth, database } from '../config/firebase';
-import { ref, set } from 'firebase/database';
+import { ref, set, push, serverTimestamp } from 'firebase/database';
 
 type Language = 'zh-TW' | 'en' | 'ja';
 
@@ -40,6 +40,8 @@ interface TranslationType {
     readonly title: string;
     readonly placeholder: string;
     readonly send: string;
+    readonly userJoined: string;
+    readonly userLeft: string;
   };
   readonly whiteboard: {
     readonly kickUser: string;
@@ -117,7 +119,9 @@ export const translations = {
     chat: {
       title: '聊天室',
       placeholder: '輸入訊息...',
-      send: '送出'
+      send: '送出',
+      userJoined: '進入了房間',
+      userLeft: '離開了房間'
     },
     whiteboard: {
       kickUser: '踢出用戶',
@@ -187,7 +191,9 @@ export const translations = {
     chat: {
       title: 'Chat',
       placeholder: 'Type a message...',
-      send: 'Send'
+      send: 'Send',
+      userJoined: 'joined the room',
+      userLeft: 'left the room'
     },
     whiteboard: {
       kickUser: 'Kick User',
@@ -257,7 +263,9 @@ export const translations = {
     chat: {
       title: 'チャット',
       placeholder: 'メッセージを入力...',
-      send: '送信'
+      send: '送信',
+      userJoined: 'が入室しました',
+      userLeft: 'が退室しました'
     },
     whiteboard: {
       kickUser: 'ユーザーをキック',

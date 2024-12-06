@@ -250,7 +250,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, [roomId]);
 
 
-  const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen'): LineProperties => {
+  const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
     const baseWidthMultiplier = {
       mouse: 1.5,
       touch: isMobile() ? 2.0 : 1.5, // 增加手機觸控的筆觸寬度
