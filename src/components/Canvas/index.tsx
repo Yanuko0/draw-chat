@@ -3,7 +3,7 @@ import Konva from 'konva';
 import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Circle, Line as KonvaLine } from 'react-konva';
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useCanvasStore } from '../../store/useCanvasStore';
-import { ref, onValue, set, push, serverTimestamp, get } from 'firebase/database';
+import { ref, onValue, set, push, serverTimestamp, get, query, orderByKey, limitToLast, update } from 'firebase/database';
 import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload, BiUndo, BiRedo } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
 import debounce from 'lodash/debounce';
@@ -114,44 +114,33 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const [isCreator, setIsCreator] = useState(false);
   const [isKicked, setIsKicked] = useState(false);
   const router = useRouter();
+  const [lastLoadedKey, setLastLoadedKey] = useState<string | null>(null);
+  const ITEMS_PER_PAGE = 50;
 
-  // Firebase 監聽
+  const batchUpdate = useMemo(() => 
+    debounce(async (updates: Record<string, any>) => {
+      const batch: Record<string, any> = {};
+      Object.entries(updates).forEach(([path, data]) => {
+        batch[path] = data;
+      });
+      await update(ref(database), batch);
+    }, 200)
+  , []);
+
+  // 優化監聽策略
   useEffect(() => {
-    const roomRef = ref(database, `rooms/${roomId}/lines`);
+    // 合併監聽
+    const roomRef = ref(database, `rooms/${roomId}`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const newLines = Object.values(data) as LineWithUser[];
-        setLines(newLines);
-
-        // 更新歷史記錄
-        if (!history.some(historyLines =>
-          JSON.stringify(historyLines) === JSON.stringify(newLines)
-        )) {
-          const newHistory = [...history, newLines];
-          setHistory(newHistory);
-          setCurrentStep(newHistory.length - 1);
-        }
-      } else {
-        setLines([]);
-        setHistory([[]]);
-        setCurrentStep(0);
+        if (data.l) setLines(Object.values(data.l).map(dataCompressor.decompressLine));
+        if (data.i) setImages(data.i);
+        if (data.m) setMessages(Object.values(data.m || {}));  // 轉換為數組
+        if (data.u) setUsers(Object.keys(data.u));
       }
     });
-    return () => unsubscribe();
-  }, [roomId, history]);
 
-  // 監聽 Firebase 中的圖片數據
-  useEffect(() => {
-    const imagesRef = ref(database, `rooms/${roomId}/images`);
-    const unsubscribe = onValue(imagesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setImages(Object.values(data));
-      } else {
-        setImages([]);
-      }
-    });
     return () => unsubscribe();
   }, [roomId]);
 
@@ -225,13 +214,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const handleDraw = useCallback(async (line: LineElement) => {
     const startTime = performance.now();
     try {
-      const compressed = dataCompressor.compressLine(line);
+      const lineWithUser = { ...line, userId: nickname };  // 添加 userId
+      const compressed = dataCompressor.compressLine(lineWithUser);
       await dataManager.batchUpdate({
-        [`rooms/${roomId}/l/${Date.now()}`]: {
-          ...compressed,
-          u: auth.currentUser?.uid,
-          ts: Date.now()
-        }
+        [`rooms/${roomId}/l/${Date.now()}`]: compressed
       });
       performanceMonitor.logOperation(performance.now() - startTime);
     } catch (error) {
@@ -588,10 +574,40 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, []);
 
   // 清除畫布功
-  const handleClearCanvas = useCallback(() => {
-    const roomRef = ref(database, `rooms/${roomId}/lines`);
-    set(roomRef, null);
-  }, [roomId]);
+  const handleClearCanvas = useCallback(async () => {
+    try {
+      const startTime = performance.now();
+      const roomRef = ref(database, `rooms/${roomId}/lines`);
+      
+      // 使用 query 限制讀取數量
+      const queryRef = query(roomRef, limitToLast(1000));
+      const snapshot = await get(queryRef);
+      const lines = snapshot.val();
+      
+      if (lines) {
+        // 使用 Object.entries 的替代方法
+        const entries = Object.keys(lines).filter(key => 
+          lines[key].userId === nickname
+        );
+        
+        // 批量更新
+        const updates = entries.reduce((acc, key) => {
+          acc[`rooms/${roomId}/lines/${key}`] = null;
+          return acc;
+        }, {} as Record<string, any>);
+        
+        // 使用單次更新替代多次設置
+        await update(ref(database), updates);
+        
+        // 更新本地狀態
+        setLines(prev => prev.filter(line => line.userId !== nickname));
+      }
+      
+      performanceMonitor.logOperation(performance.now() - startTime);
+    } catch (error) {
+      console.error('Clear canvas error:', error);
+    }
+  }, [roomId, nickname]);
 
   // 添加清除全部功能
   const handleClearAll = useCallback(() => {
@@ -740,16 +756,43 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     };
   }, []);
 
-  // 優化圖片渲染
+  // 1. 確保正確監聽圖片數據
+  useEffect(() => {
+    const imagesRef = ref(database, `rooms/${roomId}/images`);
+    const unsubscribe = onValue(imagesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const imagesList = Object.values(data) as ImageElement[];
+        console.log('Loaded images:', imagesList); // 添加日誌
+        setImages(imagesList);
+      } else {
+        setImages([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId]);
+
+  // 2. 優化圖片快取
   const imageCache = useMemo(() => {
     const cache: { [key: string]: HTMLImageElement } = {};
+    
     images.forEach(image => {
       if (!cache[image.src]) {
         const img = new window.Image();
         img.src = image.src;
         cache[image.src] = img;
+        
+        // 添加載入完成的日誌
+        img.onload = () => {
+          console.log('Image loaded:', image.id);
+          if (stageRef.current) {
+            stageRef.current.batchDraw();
+          }
+        };
       }
     });
+    
     return cache;
   }, [images]);
 
@@ -801,7 +844,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const renderImages = useMemo(() => (
     images.map((image, i) => (
-      <Group key={i}>
+      <Group key={`image-${image.id}`}>
         <KonvaImage
           id={image.id}
           image={imageCache[image.src]}
@@ -809,54 +852,28 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           y={image.y}
           width={image.width}
           height={image.height}
-          draggable={dragMode}
+          draggable={true}
           onClick={(e) => {
             e.cancelBubble = true;
+            console.log('Image clicked:', image.id); // 添加點擊日誌
             setSelectedImage(image.id);
           }}
-          onTransformEnd={(e) => {
-            // 取得變形後的節點
-            const node = e.target;
-            const scaleX = node.scaleX();
-            const scaleY = node.scaleY();
-
-            // 重設比例並更新尺寸
-            node.scaleX(1);
-            node.scaleY(1);
-
-            // 更新到 Firebase
-            const imageRef = ref(database, `rooms/${roomId}/images/${image.id}`);
-            set(imageRef, {
-              ...image,
-              x: node.x(),
-              y: node.y(),
-              width: node.width() * scaleX,
-              height: node.height() * scaleY,
-            });
-          }}
           onDragEnd={(e) => {
-            // 更新拖曳後的位置到 Firebase
             const imageRef = ref(database, `rooms/${roomId}/images/${image.id}`);
-            set(imageRef, {
+            const updates = {
               ...image,
               x: e.target.x(),
-              y: e.target.y(),
-            });
+              y: e.target.y()
+            };
+            console.log('Updating image position:', updates); // 添加更新日誌
+            set(imageRef, updates);
           }}
         />
-
         {selectedImage === image.id && (
           <Transformer
             ref={transformerRef}
             resizeEnabled={true}
             rotateEnabled={true}
-            keepRatio={false}
-            enabledAnchors={[
-              'top-left', 'top-right',
-              'bottom-left', 'bottom-right',
-              'middle-left', 'middle-right',
-              'top-center', 'bottom-center'
-            ]}
             boundBoxFunc={(oldBox, newBox) => {
               const minWidth = 5;
               const minHeight = 5;
@@ -866,12 +883,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 height: Math.max(minHeight, newBox.height),
               };
             }}
-            anchorSize={10}
-            borderStroke="#00ff00"
-            borderStrokeWidth={2}
-            anchorFill="#ffffff"
-            anchorStroke="#00ff00"
-            padding={5}
           />
         )}
       </Group>
@@ -964,14 +975,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const imgData = event.target?.result as string;
 
-        // 創建一個臨時圖片來獲取尺寸
+        // 創建臨時圖片獲取尺寸
         const img = new window.Image();
         img.src = imgData;
 
@@ -998,45 +1009,37 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             }
 
             // 計算中心位置
+            const stage = stageRef.current;
             const centerX = (window.innerWidth - width) / 2;
             const centerY = (window.innerHeight - height) / 2;
 
             // 考慮當前的縮放和平移
-            const stage = stageRef.current;
             const adjustedX = (centerX - position.x) / scale;
             const adjustedY = (centerY - position.y) / scale;
 
-            // 生成唯一 ID
+            // 生成唯一 ID 並添加時間戳
             const imageId = `image_${Date.now()}`;
 
             // 更新到 Firebase
             const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-            set(imageRef, {
+            const newImage = {
               id: imageId,
               x: adjustedX,
               y: adjustedY,
               width: width / scale,
               height: height / scale,
-              src: imgData
-            });
+              src: imgData,
+              draggable: true // 添加可拖曳屬性
+            };
 
-            resolve(true);
-          };
-
-          img.onerror = () => {
-            console.error('圖片載入失敗');
-            resolve(false);
+            set(imageRef, newImage);
+            setSelectedImage(imageId); // 上傳後自動選中圖片
           };
         });
       };
-
-      reader.onerror = () => {
-        console.error('檔案讀取失敗');
-      };
-
       reader.readAsDataURL(file);
     }
-  };
+  }, [roomId, position, scale]);
 
   // 初始化 Fabric.js canvas
   useEffect(() => {
@@ -1510,6 +1513,13 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
   }, []);
 
+  const loadMoreData = useCallback(async () => {
+    const roomRef = ref(database, `rooms/${roomId}/lines`);
+    const queryRef = query(roomRef, orderByKey(), limitToLast(ITEMS_PER_PAGE));
+    const snapshot = await get(queryRef);
+    // ... 處理數據
+  }, [roomId]);
+
   return (
     <div
       className="relative"
@@ -1543,7 +1553,53 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         onContextMenu={e => e.evt.preventDefault()}
       >
         <Layer>
-          {renderImages}
+          {/* 先渲染圖片 */}
+          {images.map((image, i) => (
+            <Group key={`image-${image.id}`}>
+              <KonvaImage
+                id={image.id}
+                image={imageCache[image.src]}
+                x={image.x}
+                y={image.y}
+                width={image.width}
+                height={image.height}
+                draggable={true}
+                onClick={(e) => {
+                  e.cancelBubble = true;
+                  console.log('Image clicked:', image.id); // 添加點擊日誌
+                  setSelectedImage(image.id);
+                }}
+                onDragEnd={(e) => {
+                  const imageRef = ref(database, `rooms/${roomId}/images/${image.id}`);
+                  const updates = {
+                    ...image,
+                    x: e.target.x(),
+                    y: e.target.y()
+                  };
+                  console.log('Updating image position:', updates); // 添加更新日誌
+                  set(imageRef, updates);
+                }}
+              />
+              {selectedImage === image.id && (
+                <Transformer
+                  ref={transformerRef}
+                  resizeEnabled={true}
+                  rotateEnabled={true}
+                  boundBoxFunc={(oldBox, newBox) => {
+                    const minWidth = 5;
+                    const minHeight = 5;
+                    return {
+                      ...newBox,
+                      width: Math.max(minWidth, newBox.width),
+                      height: Math.max(minHeight, newBox.height),
+                    };
+                  }}
+                />
+              )}
+            </Group>
+          ))}
+          
+          {/* 然後渲染線條 */}
           {renderLines}
           {currentLine && (
             <Line
@@ -1558,35 +1614,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               globalCompositeOperation={
                 currentLine.tool === 'eraser' ? 'destination-out' : 'source-over'
               }
-            />
-          )}
-          {selectedImage && dragMode && (
-            <Transformer
-              ref={transformerRef}
-              resizeEnabled={true}
-              rotateEnabled={true}
-              keepRatio={false}
-              enabledAnchors={[
-                'top-left', 'top-right',
-                'bottom-left', 'bottom-right',
-                'middle-left', 'middle-right',
-                'top-center', 'bottom-center'
-              ]}
-              boundBoxFunc={(oldBox, newBox) => {
-                const minWidth = 5;
-                const minHeight = 5;
-                return {
-                  ...newBox,
-                  width: Math.max(minWidth, newBox.width),
-                  height: Math.max(minHeight, newBox.height),
-                };
-              }}
-              anchorSize={10}
-              borderStroke="#00ff00"
-              borderStrokeWidth={2}
-              anchorFill="#ffffff"
-              anchorStroke="#00ff00"
-              padding={5}
             />
           )}
         </Layer>

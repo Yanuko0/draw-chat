@@ -41,6 +41,7 @@ interface LineElement {
   deviceType: 'mouse' | 'touch' | 'pen';
   opacity?: number;
   dash?: number[];
+  userId: string;
 }
 
 // 優化的數據結構介面
@@ -50,8 +51,8 @@ interface OptimizedRoom {
       p: number[];    // points
       c: string;      // color
       w: number;      // width
-      t: string;      // tool (b: brush, e: eraser)
-      d: string;      // device (m: mouse, t: touch, p: pen)
+      t: 'b' | 'e';   // tool
+      d: 'm' | 't' | 'p';  // device
       o?: number;     // opacity
       u: string;      // userId
       ts: number;     // timestamp
@@ -80,6 +81,30 @@ interface OptimizedRoom {
     }
   };
 }
+
+// 新增數據壓縮與過濾
+export const dataOptimizer = {
+  compressLine: (line: LineElement): OptimizedRoom['l'][string] => ({
+    p: line.points.map(n => Math.round(n * 10) / 10),
+    c: line.strokeColor,
+    w: Math.round(line.strokeWidth),
+    t: line.tool === 'eraser' ? 'e' : 'b',
+    d: line.deviceType[0] as 'm' | 't' | 'p',
+    o: line.opacity,
+    u: line.userId,
+    ts: Date.now()
+  }),
+
+  filterOldData: (data: Record<string, { ts: number }>, timeWindow: number = 30 * 60 * 1000) => {
+    const now = Date.now();
+    return Object.entries(data).reduce<Record<string, { ts: number }>>((acc, [key, value]) => {
+      if (now - value.ts < timeWindow) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+  }
+};
 
 // 數據管理工具
 export const dataManager = {
@@ -184,7 +209,8 @@ export const dataCompressor = {
     deviceType: compressed.d === 'm' ? 'mouse' : 
                 compressed.d === 't' ? 'touch' : 'pen',
     opacity: compressed.o,
-    dash: undefined
+    dash: undefined,
+    userId: compressed.u
   }),
 
   // 壓縮圖片數據
