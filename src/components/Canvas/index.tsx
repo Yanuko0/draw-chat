@@ -539,7 +539,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const minDistance = 4;
 
       if (distance > minDistance) {
-        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-3000); // 只保留最後 50 個點
+        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-2000); // 只保留最後 50 個點
 
         const newLine = {
           ...currentLine,
@@ -1302,7 +1302,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const getRoomInfoStyles = () => {
     return {
       container: `fixed top-3 right-3 
-        w-[33vw] // 改為視窗寬度的三分之一
+        w-[66vw] // 改為視窗寬度的三分之一
         bg-black/30 
         backdrop-blur-md 
         rounded-lg 
@@ -1801,7 +1801,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
       {/* 右側工具列 */}
       <div
-        className={getToolbarStyles()}
+        className={`${getToolbarStyles()} right-3 top-1/2 -translate-y-1/2`}
         draggable={true}
         onDragStart={handleToolbarDragStart}
         onDragEnd={handleToolbarDragEnd}
@@ -2079,7 +2079,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
         {/* 輸入框 */}
         <div className="flex items-center gap-2 p-2 border-t border-gray-700">
-          <StickerPicker onStickerSelect={handleStickerSelect} roomId={roomId}/>
+          {/* 修改 StickerPicker 容器樣式 */}
+          <div className="min-w-[30px] flex-shrink-0"> {/* 添加最小寬度和防止收縮 */}
+            <StickerPicker 
+              onStickerSelect={handleStickerSelect} 
+              roomId={roomId}
+            />
+          </div>
+          
           <input
             type="text"
             value={newMessage}
@@ -2090,25 +2097,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 handleSendMessage(e);
               }
             }}
-            onFocus={() => {
-              // 防止輸入框聚焦時的自動縮放
-              document.body.style.zoom = '1';
-            }}
             placeholder="message..."
             className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-            style={{
-              fontSize: '16px', // 防止 iOS 自動縮放
-              transform: 'translateZ(0)', // 強制 GPU 渲染
-              WebkitAppearance: 'none', // 移除預設樣式
-            }}
           />
+          
           <button
             onClick={handleSendMessage}
-            className="px-3 py-1.5 bg-[#87A9B2] text-white rounded-lg hover:bg-[#6B8B95] 
+            className="min-w-[40px] flex-shrink-0 px-3 py-1.5 bg-[#87A9B2] text-white rounded-lg hover:bg-[#6B8B95] 
                        transition-colors duration-200 flex items-center gap-1.5 
                        shadow-md hover:shadow-lg active:scale-95 transform"
           >
-
             <IoSend size={16} className="text-white" />
           </button>
         </div>
