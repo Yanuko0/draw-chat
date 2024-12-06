@@ -442,7 +442,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     debounce((path: string, data: any) => {
       const dbRef = ref(database, path);
       set(dbRef, data);
-    }, 6.94),
+    }, 100),
     []
   );
 
@@ -463,46 +463,34 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
     
-    const dx = pos.x - lastPointerPosition.x;
-    const dy = pos.y - lastPointerPosition.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    const minDistance = 2;
-    const maxDistance = 10;
-    
-    if (distance > minDistance) {
-      const angle = Math.atan2(dy, dx);
-      const steps = Math.ceil(distance / minDistance);
-      const newPoints = [];
+    requestAnimationFrame(() => {
+      const dx = pos.x - lastPointerPosition.x;
+      const dy = pos.y - lastPointerPosition.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
       
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = lastPointerPosition.x + dx * t;
-        const y = lastPointerPosition.y + dy * t;
-        newPoints.push(x, y);
-      }
-
-      let strokeWidth;
-      if (e.evt.pointerType === 'mouse') {
-        strokeWidth = currentLine.strokeWidth;
-      } else {
-        const pressure = e.evt.pointerType === 'pen' 
-          ? Math.max(0.15, e.evt.pressure * 1.5)
-          : 0.5;
-        strokeWidth = currentLine.strokeWidth * pressure;
-      }
-
-      const newLine = {
-        ...currentLine,
-        points: [...currentLine.points, ...newPoints],
-        strokeWidth
-      };
+      const minDistance = 2;
       
-      setCurrentLine(newLine);
-      setLastPointerPosition({ x: pos.x, y: pos.y });
+      if (distance > minDistance) {
+        const newPoints = [...currentLine.points, pos.x, pos.y];
+        
+        const newLine = {
+          ...currentLine,
+          points: newPoints,
+          strokeWidth: currentLine.strokeWidth
+        };
+        
+        setCurrentLine(newLine);
+        setLastPointerPosition({ x: pos.x, y: pos.y });
 
-      debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
-    }
+        if (newPoints.length % 4 === 0) {
+          debouncedUpdate(`rooms/${roomId}/lines/${lines.length}`, newLine);
+        }
+
+        if (stageRef.current) {
+          stageRef.current.batchDraw();
+        }
+      }
+    });
   }, [isDragging, isPressing, currentLine, lastPointerPosition, roomId, lines.length, debouncedUpdate]);
 
   const handlePointerUp = useCallback((e: any) => {
@@ -618,28 +606,78 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const imgData = event.target?.result as string;
-        const imageId = Date.now().toString();
         
-        // 計算正確的放置位置
-        const stage = stageRef.current;
-        const position = isUpload ? {
-          x: window.innerWidth / 2 - 100,  // 畫面中心
-          y: window.innerHeight / 2 - 100
-        } : {
-          x: (e.nativeEvent.offsetX - stage.x()) / stage.scaleX(),
-          y: (e.nativeEvent.offsetY - stage.y()) / stage.scaleY()
-        };
-
-        const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-        set(imageRef, {
-          id: imageId,
-          x: position.x,
-          y: position.y,
-          src: imgData
+        // 創建臨時圖片獲取尺寸
+        const img = new window.Image();
+        img.src = imgData;
+        
+        await new Promise((resolve) => {
+          img.onload = () => {
+            // 計算適當的圖片尺寸
+            const maxWidth = window.innerWidth * 0.8;
+            const maxHeight = window.innerHeight * 0.8;
+            
+            let width = img.width;
+            let height = img.height;
+            
+            // 保持寬高比例進行縮放
+            if (width > maxWidth) {
+              const ratio = maxWidth / width;
+              width = maxWidth;
+              height = height * ratio;
+            }
+            
+            if (height > maxHeight) {
+              const ratio = maxHeight / height;
+              height = maxHeight;
+              width = width * ratio;
+            }
+            
+            const stage = stageRef.current;
+            let x, y;
+            
+            if (isUpload) {
+              // 上傳時置中
+              x = (window.innerWidth - width) / 2;
+              y = (window.innerHeight - height) / 2;
+            } else {
+              // 拖放時使用滑鼠位置
+              x = (e.nativeEvent.offsetX - stage.x()) / stage.scaleX();
+              y = (e.nativeEvent.offsetY - stage.y()) / stage.scaleY();
+            }
+            
+            // 調整位置考慮當前的縮放和平移
+            const adjustedX = (x - position.x) / scale;
+            const adjustedY = (y - position.y) / scale;
+            
+            const imageId = `image_${Date.now()}`;
+            const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
+            
+            set(imageRef, {
+              id: imageId,
+              x: adjustedX,
+              y: adjustedY,
+              width: width / scale,
+              height: height / scale,
+              src: imgData
+            });
+            
+            resolve(true);
+          };
+          
+          img.onerror = () => {
+            console.error('圖片載入失敗');
+            resolve(false);
+          };
         });
       };
+      
+      reader.onerror = () => {
+        console.error('檔案讀取失敗');
+      };
+      
       reader.readAsDataURL(file);
     }
   };
@@ -763,31 +801,30 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         {selectedImage === image.id && (
           <Transformer
             ref={transformerRef}
-            boundBoxFunc={(oldBox, newBox) => {
-              // 限制最小尺寸
-              const minWidth = 5;
-              const minHeight = 5;
-              if (newBox.width < minWidth || newBox.height < minHeight) {
-                return oldBox;
-              }
-              return newBox;
-            }}
+            resizeEnabled={true}
+            rotateEnabled={true}
+            keepRatio={false}
             enabledAnchors={[
               'top-left', 'top-right',
               'bottom-left', 'bottom-right',
               'middle-left', 'middle-right',
               'top-center', 'bottom-center'
             ]}
-            rotateEnabled={true}
-            keepRatio={false}
-            padding={5}
+            boundBoxFunc={(oldBox, newBox) => {
+              const minWidth = 5;
+              const minHeight = 5;
+              return {
+                ...newBox,
+                width: Math.max(minWidth, newBox.width),
+                height: Math.max(minHeight, newBox.height),
+              };
+            }}
             anchorSize={10}
-            anchorCornerRadius={5}
-            anchorStrokeWidth={2}
             borderStroke="#00ff00"
             borderStrokeWidth={2}
             anchorFill="#ffffff"
             anchorStroke="#00ff00"
+            padding={5}
           />
         )}
       </Group>
@@ -884,66 +921,72 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const imgData = event.target?.result as string;
         
-        // 檢查是否為移動設備
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // 創建一個臨時圖片來獲取尺寸
+        const img = new window.Image();
+        img.src = imgData;
         
-        if (isMobile) {
-          // 移動設備的處理邏輯
-          const imageId = Date.now().toString();
-          const centerX = window.innerWidth / 2;
-          const centerY = window.innerHeight / 2;
-          
-          fabric.Image.fromURL(
-            imgData, 
-            { crossOrigin: 'anonymous' },
-            (img: fabric.FabricObject<Partial<fabric.FabricObjectProps>, fabric.SerializedObjectProps, fabric.ObjectEvents>) => {
-              img.set({
-                left: centerX - 100,
-                top: centerY - 100,
-                cornerColor: 'blue',
-                cornerStrokeColor: 'blue',
-                cornerSize: 12,
-                transparentCorners: false,
-                borderColor: 'blue',
-                borderScaleFactor: 2,
-                padding: 5,
-                data: { id: imageId, src: imgData }
-              });
-
-              fabricRef.current?.add(img);
-              
-              // 同步到 Firebase
-              const dbImageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-              set(dbImageRef, {
-                id: imageId,
-                x: img.left,
-                y: img.top,
-                width: img.width,
-                height: img.height,
-                src: imgData
-              });
+        await new Promise((resolve) => {
+          img.onload = () => {
+            // 計算適當的圖片尺寸
+            const maxWidth = window.innerWidth * 0.8;
+            const maxHeight = window.innerHeight * 0.8;
+            
+            let width = img.width;
+            let height = img.height;
+            
+            // 保持寬高比例進行縮放
+            if (width > maxWidth) {
+              const ratio = maxWidth / width;
+              width = maxWidth;
+              height = height * ratio;
             }
-          );
-        } else {
-          // 保持原有的桌面版處理邏輯
-          const mockEvent = {
-            preventDefault: () => {},
-            stopPropagation: () => {},
-            dataTransfer: {
-              files: [new File([imgData], "image.png", { type: "image/png" })],
-            },
-            nativeEvent: {
-              offsetX: window.innerWidth / 2,
-              offsetY: window.innerHeight / 2,
-            },
-          } as unknown as React.DragEvent<HTMLDivElement>;
-
-          handleDrop(mockEvent, true);
-        }
+            
+            if (height > maxHeight) {
+              const ratio = maxHeight / height;
+              height = maxHeight;
+              width = width * ratio;
+            }
+            
+            // 計算中心位置
+            const centerX = (window.innerWidth - width) / 2;
+            const centerY = (window.innerHeight - height) / 2;
+            
+            // 考慮當前的縮放和平移
+            const stage = stageRef.current;
+            const adjustedX = (centerX - position.x) / scale;
+            const adjustedY = (centerY - position.y) / scale;
+            
+            // 生成唯一 ID
+            const imageId = `image_${Date.now()}`;
+            
+            // 更新到 Firebase
+            const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
+            set(imageRef, {
+              id: imageId,
+              x: adjustedX,
+              y: adjustedY,
+              width: width / scale,
+              height: height / scale,
+              src: imgData
+            });
+            
+            resolve(true);
+          };
+          
+          img.onerror = () => {
+            console.error('圖片載入失敗');
+            resolve(false);
+          };
+        });
       };
+      
+      reader.onerror = () => {
+        console.error('檔案讀取失敗');
+      };
+      
       reader.readAsDataURL(file);
     }
   };
@@ -1126,12 +1169,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
     
     const deviceType = getDeviceType(evt);
-    if (deviceType === 'mouse') {
-      return 1;  // 保持滑鼠的設定不變
-    }
-    
-    if (deviceType === 'touch') {
-      return 0.9;  // 給手機觸控一個固定較高的壓力值
+    if (deviceType === 'mouse' || deviceType === 'touch') {
+      return 1;  // 將手機觸控的壓力值設置為與滑鼠相同的固定值
     }
     
     // 其他設備保持原邏輯
@@ -1384,6 +1423,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
     return () => unsubscribe();
   }, [roomId, nickname, router]);
+
+  // 優化點6: 添加渲染優化
+  useEffect(() => {
+    if (stageRef.current) {
+      const stage = stageRef.current;
+      stage.batchDraw();
+    }
+  }, []);
 
   return (
     <div 

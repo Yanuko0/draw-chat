@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useLayoutEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useLayoutEffect } from 'react';
 import { auth, database } from '../config/firebase';
 import { ref, set } from 'firebase/database';
 
@@ -292,13 +292,16 @@ export const translations = {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+// 創建一個跨平台的 useIsomorphicLayoutEffect
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 export const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentLang, setCurrentLang] = useState<Language>('zh-TW');
   const [isClient, setIsClient] = useState(false);
 
-  useLayoutEffect(() => {
-    const savedLang = localStorage.getItem('preferredLanguage');
-    if (savedLang) {
+  useIsomorphicLayoutEffect(() => {
+    const savedLang = localStorage.getItem('language');
+    if (savedLang && ['zh-TW', 'en', 'ja'].includes(savedLang)) {
       setCurrentLang(savedLang as Language);
     }
     setIsClient(true);
@@ -308,7 +311,7 @@ export const LanguageProvider = ({ children }: { children: React.ReactNode }) =>
     currentLang,
     setCurrentLang: (lang: Language) => {
       setCurrentLang(lang);
-      localStorage.setItem('preferredLanguage', lang);
+      localStorage.setItem('language', lang);
     },
     t: translations[currentLang],
   };
