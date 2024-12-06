@@ -485,7 +485,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const minDistance = 4;
 
       if (distance > minDistance) {
-        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-100); // 只保留最後 50 個點
+        const newPoints = [...currentLine.points, pos.x, pos.y].slice(-2000); // 只保留最後 50 個點
 
         const newLine = {
           ...currentLine,
@@ -580,7 +580,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const roomRef = ref(database, `rooms/${roomId}/lines`);
       
       // 使用 query 限制讀取數量
-      const queryRef = query(roomRef, limitToLast(1000));
+      const queryRef = query(roomRef, limitToLast(2000));
       const snapshot = await get(queryRef);
       const lines = snapshot.val();
       
@@ -1441,7 +1441,6 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   // 添加自動清理
   useEffect(() => {
     const interval = setInterval(() => {
-      dataManager.cleanOldData(roomId);
       dataManager.cleanInactiveUsers(roomId);
     }, 5 * 60 * 1000);
 
@@ -1520,6 +1519,30 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     // ... 處理數據
   }, [roomId]);
 
+  // 新增電繪筆相關的處理函數
+  const handlePenInput = useCallback((e: any) => {
+    if (e.evt.pointerType === 'pen') {
+      e.evt.preventDefault();
+      const stage = e.target.getStage();
+      const pos = stage.getRelativePointerPosition();
+      const pressure = Math.max(0.2, e.evt.pressure * 1.5);
+
+      const penLineProps = {
+        tool,
+        points: [pos.x, pos.y],
+        strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
+        strokeWidth: strokeWidth * pressure,
+        tension: 0.2,
+        opacity: 0.95,
+        deviceType: 'pen' as const,
+        userId: nickname,
+      };
+
+      setCurrentLine(penLineProps);
+      setLastPointerPosition({ x: pos.x, y: pos.y });
+    }
+  }, [tool, strokeColor, strokeWidth, nickname]);
+
   return (
     <div
       className="relative"
@@ -1528,29 +1551,22 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     >
       <Stage
         ref={stageRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onWheel={handleWheel}
-        scaleX={scale}
-        scaleY={scale}
+        width={stageSize.width}
+        height={stageSize.height}
+        onPointerDown={(e) => {
+          if (e.evt.pointerType === 'pen') {
+            handlePenInput(e);
+          } else {
+            handlePointerDown(e);
+          }
+        }}
+        style={{
+          touchAction: 'none'
+        }}
+        scale={{ x: scale, y: scale }}
         x={position.x}
         y={position.y}
-        style={{
-          background: '#ffffff',
-          touchAction: 'none',
-          WebkitTouchCallout: 'none',
-          WebkitUserSelect: 'none',
-          KhtmlUserSelect: 'none',
-          MozUserSelect: 'none',
-          msUserSelect: 'none',
-          userSelect: 'none',
-        }}
-        onClick={handleStageClick}
-        onContextMenu={e => e.evt.preventDefault()}
+        onWheel={handleWheel}
       >
         <Layer>
           {/* 先渲染圖片 */}
@@ -1898,7 +1914,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           </>
         )}
 
-        {/* 輸入框 */}
+        {/* 聊天室輸入區域 */}
         <div className="flex items-center gap-2 p-2 border-t border-gray-700">
           <StickerPicker onStickerSelect={handleStickerSelect} roomId={roomId}/>
           <input
