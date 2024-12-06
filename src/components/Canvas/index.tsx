@@ -3,7 +3,6 @@ import Konva from 'konva';
 import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Circle, Line as KonvaLine } from 'react-konva';
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useCanvasStore } from '../../store/useCanvasStore';
-import { database } from '../../config/firebase';
 import { ref, onValue, set, push, serverTimestamp, get } from 'firebase/database';
 import { BiZoomIn, BiZoomOut, BiImageAdd, BiEraser, BiTrash, BiDownload, BiUndo, BiRedo } from 'react-icons/bi';
 import { MdOutlineZoomOutMap, MdPanTool } from 'react-icons/md';
@@ -17,6 +16,15 @@ import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { IoSend } from 'react-icons/io5';
 import { useLanguage } from '../../contexts/LanguageContext';
+
+import {
+  auth,
+  database,
+  dataCompressor,
+  dataManager,
+  performanceMonitor,
+  syncStrategy
+} from '../../config/firebase';
 
 interface CanvasProps {
   roomId: string;
@@ -115,9 +123,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       if (data) {
         const newLines = Object.values(data) as LineWithUser[];
         setLines(newLines);
-        
+
         // 更新歷史記錄
-        if (!history.some(historyLines => 
+        if (!history.some(historyLines =>
           JSON.stringify(historyLines) === JSON.stringify(newLines)
         )) {
           const newHistory = [...history, newLines];
@@ -152,7 +160,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     if (selectedImage && transformerRef.current) {
       const stage = stageRef.current;
       if (!stage) return;
-      
+
       const node = stage.findOne(`#${selectedImage}`);
       if (node) {
         transformerRef.current.nodes([node]);
@@ -212,6 +220,26 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       };
     }
   }, [roomId, nickname]);
+
+  // 使用優化後的數據儲存
+  const handleDraw = useCallback(async (line: LineElement) => {
+    const startTime = performance.now();
+    try {
+      const compressed = dataCompressor.compressLine(line);
+      await dataManager.batchUpdate({
+        [`rooms/${roomId}/l/${Date.now()}`]: {
+          ...compressed,
+          u: auth.currentUser?.uid,
+          ts: Date.now()
+        }
+      });
+      performanceMonitor.logOperation(performance.now() - startTime);
+    } catch (error) {
+      performanceMonitor.metrics.errors++;
+      console.error('Draw error:', error);
+    }
+  }, [roomId]);
+
 
   const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
     const baseWidthMultiplier = {
@@ -305,10 +333,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         };
     }
   };
-  
+
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
-    
+
     const scaleBy = 1.1;
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
@@ -331,16 +359,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       if (evt.pointerType === 'pen') {
         return Math.max(0.15, evt.pressure * 1.5);
       }
-      
+
       const deviceType = getDeviceType(evt);
       if (deviceType === 'mouse') {  // 只針對滑鼠修改
         return 1;  // 給滑鼠一個固定較高的壓力值
       }
-      
+
       if (deviceType === 'touch') {
         return 0.9;  // 給手機觸控一個固定較高的壓力值
       }
-      
+
       // 其他設備保持原邏輯
       const toolPressureRanges = {
         pencil: {
@@ -370,8 +398,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         }
       };
 
-      const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] || 
-                    toolPressureRanges.pencil[deviceType];
+      const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] ||
+        toolPressureRanges.pencil[deviceType];
 
       return Math.max(ranges.min, Math.min(ranges.max, evt.pressure || ranges.base));
     };
@@ -385,7 +413,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     const pos = stage.getRelativePointerPosition();
     const deviceType = getDeviceType(e.evt);
     const pressure = getPressure(e.evt);
-    
+
     if (e.evt.pointerType === 'pen') {
       const lineProps = getLineProperties(tool, 'pen');
       const adjustedStrokeWidth = lineProps.strokeWidth * (pressure * 1.2);
@@ -409,7 +437,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     } else {
       const isRightClick = e.evt.button === 2;
       const isMiddleClick = e.evt.button === 1;
-      
+
       if (isRightClick || isMiddleClick || e.evt.ctrlKey || e.evt.metaKey || dragMode) {
         setIsDragging(true);
         return;
@@ -417,7 +445,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
       setIsPressing(true);
       setLastPointerPosition({ x: pos.x, y: pos.y });
-      
+
       const lineProps = getLineProperties(tool, deviceType);
       const adjustedStrokeWidth = lineProps.strokeWidth * pressure * 0.5;
 
@@ -448,7 +476,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handlePointerMove = useCallback((e: any) => {
     e.evt.preventDefault();
-    
+
     if (isDragging) {
       const stage = e.target.getStage();
       setPosition({
@@ -462,23 +490,23 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
     const stage = e.target.getStage();
     const pos = stage.getRelativePointerPosition();
-    
+
     requestAnimationFrame(() => {
       const dx = pos.x - lastPointerPosition.x;
       const dy = pos.y - lastPointerPosition.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      
+
       const minDistance = 4;
-      
+
       if (distance > minDistance) {
         const newPoints = [...currentLine.points, pos.x, pos.y].slice(-100); // 只保留最後 50 個點
-    
+
         const newLine = {
           ...currentLine,
           points: newPoints,
           strokeWidth: currentLine.strokeWidth
         };
-        
+
         setCurrentLine(newLine);
         setLastPointerPosition({ x: pos.x, y: pos.y });
 
@@ -503,21 +531,21 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     if (tool === 'select' && selectionStart) {
       const stage = stageRef.current;
       const pos = stage.getRelativePointerPosition();
-      
+
       const selected = lines.filter(line => {
         return line.points.some((point: number, i: number) => {
           if (i % 2 === 0) {
             const x = point;
             const y = line.points[i + 1];
             return x >= Math.min(selectionStart.x, pos.x) &&
-                   x <= Math.max(selectionStart.x, pos.x) &&
-                   y >= Math.min(selectionStart.y, pos.y) &&
-                   y <= Math.max(selectionStart.y, pos.y);
+              x <= Math.max(selectionStart.x, pos.x) &&
+              y >= Math.min(selectionStart.y, pos.y) &&
+              y <= Math.max(selectionStart.y, pos.y);
           }
           return false;
         });
       });
-      
+
       setSelectedElements(selected);
       setIsDraggingSelection(true);
     }
@@ -576,7 +604,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         layer.batchDraw();
       });
     }
-    
+
     // 清除 Firebase 中的所有數據
     const roomRef = ref(database, `rooms/${roomId}`);
     const updates = {
@@ -584,10 +612,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       'images': null,     // 清除所有圖片
       'drawings': null    // 清除其他繪圖數據
     };
-    
+
     // 更新 Firebase
     set(roomRef, updates);
-    
+
     // 清除本地狀態
     setLines([]);
     setImages([]);
@@ -602,42 +630,42 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>, isUpload: boolean = false) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const imgData = event.target?.result as string;
-        
+
         // 創建臨時圖片獲取尺寸
         const img = new window.Image();
         img.src = imgData;
-        
+
         await new Promise((resolve) => {
           img.onload = () => {
             // 計算適當的圖片尺寸
             const maxWidth = window.innerWidth * 0.8;
             const maxHeight = window.innerHeight * 0.8;
-            
+
             let width = img.width;
             let height = img.height;
-            
+
             // 保持寬高比例進行縮放
             if (width > maxWidth) {
               const ratio = maxWidth / width;
               width = maxWidth;
               height = height * ratio;
             }
-            
+
             if (height > maxHeight) {
               const ratio = maxHeight / height;
               height = maxHeight;
               width = width * ratio;
             }
-            
+
             const stage = stageRef.current;
             let x, y;
-            
+
             if (isUpload) {
               // 上傳時置中
               x = (window.innerWidth - width) / 2;
@@ -647,14 +675,14 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               x = (e.nativeEvent.offsetX - stage.x()) / stage.scaleX();
               y = (e.nativeEvent.offsetY - stage.y()) / stage.scaleY();
             }
-            
+
             // 調整位置考慮當前的縮放和平移
             const adjustedX = (x - position.x) / scale;
             const adjustedY = (y - position.y) / scale;
-            
+
             const imageId = `image_${Date.now()}`;
             const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
-            
+
             set(imageRef, {
               id: imageId,
               x: adjustedX,
@@ -663,21 +691,21 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               height: height / scale,
               src: imgData
             });
-            
+
             resolve(true);
           };
-          
+
           img.onerror = () => {
             console.error('圖片載入失敗');
             resolve(false);
           };
         });
       };
-      
+
       reader.onerror = () => {
         console.error('檔案讀取失敗');
       };
-      
+
       reader.readAsDataURL(file);
     }
   };
@@ -730,20 +758,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     // 只渲染視窗範圍內的線條
     const visibleLines = lines.filter(line => {
       if (!line.points.length) return false;
-      
+
       // 簡單的視窗範圍檢查
       const [x, y] = line.points;
       const viewportX = -position.x / scale;
       const viewportY = -position.y / scale;
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;
-      
-      return x >= viewportX - 100 && 
-             x <= viewportX + viewportWidth + 100 && 
-             y >= viewportY - 100 && 
-             y <= viewportY + viewportHeight + 100;
+
+      return x >= viewportX - 100 &&
+        x <= viewportX + viewportWidth + 100 &&
+        y >= viewportY - 100 &&
+        y <= viewportY + viewportHeight + 100;
     });
-  
+
     return visibleLines.map((line, i) => (
       <Line
         key={i}
@@ -795,7 +823,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             // 重設比例並更新尺寸
             node.scaleX(1);
             node.scaleY(1);
-            
+
             // 更新到 Firebase
             const imageRef = ref(database, `rooms/${roomId}/images/${image.id}`);
             set(imageRef, {
@@ -852,27 +880,27 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handleSendMessage = (e: React.FormEvent | React.KeyboardEvent) => {
     e.preventDefault();
-    
+
     console.log('Attempting to send message:', {
       roomId,
       nickname,
       message: newMessage,
       timestamp: new Date()
     });
-    
+
     try {
       if (newMessage.trim() && nickname && roomId) {
         console.log('Creating message ref for room:', roomId);
         const messagesRef = ref(database, `rooms/${roomId}/messages`);
         const newMessageRef = push(messagesRef);
-        
+
         console.log('Setting message data');
         set(newMessageRef, {
           nickname,
           text: newMessage.trim(),
           timestamp: serverTimestamp()
         });
-        
+
         console.log('Message sent successfully');
         setNewMessage('');
       } else {
@@ -893,16 +921,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const chatContainer = document.getElementById('chat-container');
       if (!chatContainer) return;
-      
+
       const containerRect = chatContainer.getBoundingClientRect();
       const maxHeight = window.innerHeight / 2; // 最大高度為螢幕高度的一半
       const minHeight = 80; // 最小高度 (2列)
       const newHeight = Math.max(minHeight, Math.min(maxHeight, containerRect.bottom - moveEvent.clientY));
-      
+
       setChatHeight(newHeight); // 加上頭部和輸入框的高度
     };
 
@@ -917,11 +945,11 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handleRoomInfoResize = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const container = document.getElementById('room-info-container');
       if (!container) return;
-      
+
       const containerRect = container.getBoundingClientRect();
       const newHeight = Math.max(100, Math.min(400, moveEvent.clientY - containerRect.top));
       setRoomInfoHeight(newHeight);
@@ -942,45 +970,45 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const imgData = event.target?.result as string;
-        
+
         // 創建一個臨時圖片來獲取尺寸
         const img = new window.Image();
         img.src = imgData;
-        
+
         await new Promise((resolve) => {
           img.onload = () => {
             // 計算適當的圖片尺寸
             const maxWidth = window.innerWidth * 0.8;
             const maxHeight = window.innerHeight * 0.8;
-            
+
             let width = img.width;
             let height = img.height;
-            
+
             // 保持寬高比例進行縮放
             if (width > maxWidth) {
               const ratio = maxWidth / width;
               width = maxWidth;
               height = height * ratio;
             }
-            
+
             if (height > maxHeight) {
               const ratio = maxHeight / height;
               height = maxHeight;
               width = width * ratio;
             }
-            
+
             // 計算中心位置
             const centerX = (window.innerWidth - width) / 2;
             const centerY = (window.innerHeight - height) / 2;
-            
+
             // 考慮當前的縮放和平移
             const stage = stageRef.current;
             const adjustedX = (centerX - position.x) / scale;
             const adjustedY = (centerY - position.y) / scale;
-            
+
             // 生成唯一 ID
             const imageId = `image_${Date.now()}`;
-            
+
             // 更新到 Firebase
             const imageRef = ref(database, `rooms/${roomId}/images/${imageId}`);
             set(imageRef, {
@@ -991,21 +1019,21 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               height: height / scale,
               src: imgData
             });
-            
+
             resolve(true);
           };
-          
+
           img.onerror = () => {
             console.error('圖片載入失敗');
             resolve(false);
           };
         });
       };
-      
+
       reader.onerror = () => {
         console.error('檔案讀取失敗');
       };
-      
+
       reader.readAsDataURL(file);
     }
   };
@@ -1073,7 +1101,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   // 檢查 Firebase 連接
   useEffect(() => {
     console.log('Firebase database instance:', database);
-    
+
     // 測試 Firebase 連接
     const testRef = ref(database, '.info/connected');
     onValue(testRef, (snapshot) => {
@@ -1099,7 +1127,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   //清理不必要的監聽
   useEffect(() => {
     const cleanupListeners: (() => void)[] = [];
-    
+
     // Firebase 監聽
     const roomRef = ref(database, `rooms/${roomId}/lines`);
     const unsubscribe = onValue(roomRef, (snapshot) => {
@@ -1110,9 +1138,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         setLines(newLines);
       }
     });
-    
+
     cleanupListeners.push(unsubscribe);
-    
+
     return () => {
       cleanupListeners.forEach(cleanup => cleanup());
     };
@@ -1124,7 +1152,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       if (nickname && roomId) {
         const messagesRef = ref(database, `rooms/${roomId}/messages`);
         const newMessageRef = push(messagesRef);
-        
+
         const newMessage = {
           nickname,
           type: 'sticker',
@@ -1158,10 +1186,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const handleToolbarDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
     setIsDraggingToolbar(false);
-    
+
     const { innerWidth, innerHeight } = window;
     const { clientX, clientY } = e;
-    
+
     if (clientX < innerWidth * 0.25) {
       setToolbarPosition('left');
     } else if (clientX > innerWidth * 0.75) {
@@ -1175,24 +1203,20 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   const getToolbarStyles = () => {
     const baseStyles = "fixed transition-all duration-300 bg-black bg-opacity-50 rounded-lg shadow-lg z-40";
-    
+
     switch (toolbarPosition) {
       case 'left':
-        return `${baseStyles} left-2 top-1/2 -translate-y-1/2 flex flex-col ${
-          isToolbarMinimized ? 'translate-x-[-40%]' : 'translate-x-0'
-        }`;
+        return `${baseStyles} left-2 top-1/2 -translate-y-1/2 flex flex-col ${isToolbarMinimized ? 'translate-x-[-40%]' : 'translate-x-0'
+          }`;
       case 'right':
-        return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col ${
-          isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'
-        }`;
+        return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col ${isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'
+          }`;
       case 'top':
-        return `${baseStyles} top-2 left-1/2 -translate-x-1/2 flex flex-row min-w-[40px] ${
-          isToolbarMinimized ? 'translate-y-[-40%]' : 'translate-y-0'
-        }`;
-        case 'bottom':
-      return `${baseStyles} bottom-2 right-0 flex flex-row min-w-[40px] ${
-        isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-0'
-      }`;
+        return `${baseStyles} top-2 left-1/2 -translate-x-1/2 flex flex-row min-w-[40px] ${isToolbarMinimized ? 'translate-y-[-40%]' : 'translate-y-0'
+          }`;
+      case 'bottom':
+        return `${baseStyles} bottom-2 right-0 flex flex-row min-w-[40px] ${isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-0'
+          }`;
     }
   };
 
@@ -1208,12 +1232,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     if (evt.pointerType === 'pen') {
       return Math.max(0.15, evt.pressure * 1.5);
     }
-    
+
     const deviceType = getDeviceType(evt);
     if (deviceType === 'mouse' || deviceType === 'touch') {
       return 1;  // 將手機觸控的壓力值設置為與滑鼠相同的固定值
     }
-    
+
     // 其他設備保持原邏輯
     const toolPressureRanges = {
       pencil: {
@@ -1243,8 +1267,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       }
     };
 
-    const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] || 
-                  toolPressureRanges.pencil[deviceType];
+    const ranges = toolPressureRanges[tool as keyof typeof toolPressureRanges]?.[deviceType] ||
+      toolPressureRanges.pencil[deviceType];
 
     const basePressure = evt.pressure || ranges.base;
     return Math.max(ranges.min, Math.min(ranges.max, basePressure));
@@ -1267,7 +1291,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       link.download = `whiteboard-${timestamp}.png`;
       link.href = dataURL;
-      
+
       // 觸發下載
       document.body.appendChild(link);
       link.click();
@@ -1291,12 +1315,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     if (currentStep < history.length - 1) {
       const nextStep = currentStep + 1;
       const nextLines = history[nextStep];
-      
+
       // 確保只重做當前用戶的操作
       if (nextLines?.some(line => line.userId === nickname)) {
         setCurrentStep(nextStep);
         setLines(nextLines);
-        
+
         // 同步到 Firebase
         const roomRef = ref(database, `rooms/${roomId}/lines`);
         set(roomRef, nextLines);
@@ -1316,7 +1340,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         }
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
@@ -1344,6 +1368,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       }
     };
 
+
+    
+
     const handleTouchMove = (e: TouchEvent) => {
       if (!dragMode) return; // 只在拖曳模式下處理
 
@@ -1366,17 +1393,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           // 計算縮放比例
           const scaleChange = distance / lastDistance;
           const newScale = scale * scaleChange;
-          
+
           // 限制縮放範圍
           const limitedScale = Math.min(Math.max(0.1, newScale), 5);
-          
+
           // 更新縮放
           setScale(limitedScale);
 
           // 更新位置以保持縮放中心點
           const deltaX = center.x - lastCenter.x;
           const deltaY = center.y - lastCenter.y;
-          
+
           setPosition(prev => ({
             x: prev.x + deltaX,
             y: prev.y + deltaY
@@ -1407,6 +1434,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       document.removeEventListener('touchend', handleTouchEnd);
     };
   }, [dragMode, scale, setScale, setPosition]); // 添加相關依賴
+
+  // 添加自動清理
+  useEffect(() => {
+    const interval = setInterval(() => {
+      dataManager.cleanOldData(roomId);
+      dataManager.cleanInactiveUsers(roomId);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [roomId]);
 
   const canUndo = useCallback(() => {
     if (currentStep <= 0) return false;
@@ -1474,7 +1511,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, []);
 
   return (
-    <div 
+    <div
       className="relative"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
@@ -1492,7 +1529,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         scaleY={scale}
         x={position.x}
         y={position.y}
-        style={{ 
+        style={{
           background: '#ffffff',
           touchAction: 'none',
           WebkitTouchCallout: 'none',
@@ -1556,7 +1593,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       </Stage>
 
       {/* 右側工具列 */}
-      <div 
+      <div
         className={getToolbarStyles()}
         draggable={true}
         onDragStart={handleToolbarDragStart}
@@ -1572,33 +1609,31 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           >
             {isToolbarMinimized ? (
               <div className="w-8 h-8 flex items-center justify-center ">
-                {toolbarPosition === 'right' && <AiOutlineLeft size={24}/>}
-                {toolbarPosition === 'left' && <AiOutlineRight size={24}/>}
-                {toolbarPosition === 'top' && <AiOutlineDown size={24}/>}
-                {toolbarPosition === 'bottom' && <AiOutlineUp size={24}/>}
+                {toolbarPosition === 'right' && <AiOutlineLeft size={24} />}
+                {toolbarPosition === 'left' && <AiOutlineRight size={24} />}
+                {toolbarPosition === 'top' && <AiOutlineDown size={24} />}
+                {toolbarPosition === 'bottom' && <AiOutlineUp size={24} />}
               </div>
             ) : (
               <div className="w-8 h-8 flex items-center justify-center ml-2">
-                {toolbarPosition === 'right' && <AiOutlineRight size={24}/>}
-                {toolbarPosition === 'left' && <AiOutlineLeft size={24}/>}
-                {toolbarPosition === 'top' && <AiOutlineUp size={24}/>}
-                {toolbarPosition === 'bottom' && <AiOutlineDown size={24}/>}
+                {toolbarPosition === 'right' && <AiOutlineRight size={24} />}
+                {toolbarPosition === 'left' && <AiOutlineLeft size={24} />}
+                {toolbarPosition === 'top' && <AiOutlineUp size={24} />}
+                {toolbarPosition === 'bottom' && <AiOutlineDown size={24} />}
               </div>
             )}
           </button>
         </div>
 
         {/* 工具按鈕區域 */}
-        <div className={`transition-all duration-300 ${
-          isToolbarMinimized ? 'w-0 h-0 overflow-hidden opacity-0' : 'w-auto opacity-100 p-2'
-        }`}>
+        <div className={`transition-all duration-300 ${isToolbarMinimized ? 'w-0 h-0 overflow-hidden opacity-0' : 'w-auto opacity-100 p-2'
+          }`}>
           <div className={`flex ${['top', 'bottom'].includes(toolbarPosition) ? 'flex-row' : 'flex-col'} gap-2`}>
             <button
-              className={`p-2 rounded-lg transition-colors ${
-                canUndo() 
-                  ? 'bg-white/20 hover:bg-white/30 text-white' 
+              className={`p-2 rounded-lg transition-colors ${canUndo()
+                  ? 'bg-white/20 hover:bg-white/30 text-white'
                   : 'bg-white/10 text-white/50 cursor-not-allowed'
-              }`}
+                }`}
               onClick={handleUndo}
               disabled={!canUndo()}
               title="復原 (Ctrl+Z)"
@@ -1607,11 +1642,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             </button>
 
             <button
-              className={`p-2 rounded-lg transition-colors ${
-                canRedo() 
-                  ? 'bg-white/20 hover:bg-white/30 text-white' 
+              className={`p-2 rounded-lg transition-colors ${canRedo()
+                  ? 'bg-white/20 hover:bg-white/30 text-white'
                   : 'bg-white/10 text-white/50 cursor-not-allowed'
-              }`}
+                }`}
               onClick={handleRedo}
               disabled={!canRedo()}
               title="重做 (Ctrl+Shift+Z)"
@@ -1644,11 +1678,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             </button>
 
             <button
-              className={`p-2 rounded-lg transition-colors ${
-                dragMode 
-                  ? 'bg-white text-gray-800 hover:bg-gray-100' 
+              className={`p-2 rounded-lg transition-colors ${dragMode
+                  ? 'bg-white text-gray-800 hover:bg-gray-100'
                   : 'bg-white/20 hover:bg-white/30 text-white'
-              }`}
+                }`}
               onClick={() => setDragMode(!dragMode)}
               title="拖曳模式"
             >
@@ -1676,15 +1709,15 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                     const dt = new DataTransfer();
                     dt.items.add(target.files[0]);
                     const mockEvent = {
-                      preventDefault: () => {},
-                      stopPropagation: () => {},
+                      preventDefault: () => { },
+                      stopPropagation: () => { },
                       dataTransfer: dt,
                       nativeEvent: {
                         offsetX: 0,  // 這些值不會被使用
                         offsetY: 0
                       }
                     } as React.DragEvent<HTMLDivElement>;
-                    
+
                     handleDrop(mockEvent, true);  // 傳入 isUpload 標記
                   }
                 };
@@ -1703,31 +1736,30 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               <BiEraser size={24} />
             </button>
 
-          <button
-            className="p-2 bg-red-700 text-white rounded-lg hover:bg-red-800"
-            onClick={handleClearAll}
-            title="清除全部"
-          >
-            <BiTrash size={24} />
-          </button>
+            <button
+              className="p-2 bg-red-700 text-white rounded-lg hover:bg-red-800"
+              onClick={handleClearAll}
+              title="清除全部"
+            >
+              <BiTrash size={24} />
+            </button>
 
-          <button
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
-            onClick={handleDownloadCanvas}
-            title="下載畫布"
-          >
-            <BiDownload size={24} className="text-white" />
-          </button>
+            <button
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              onClick={handleDownloadCanvas}
+              title="下載畫布"
+            >
+              <BiDownload size={24} className="text-white" />
+            </button>
+          </div>
         </div>
-      </div>
       </div>
 
       {/* 聊天室面板 */}
-      <div 
+      <div
         id="chat-container"
-        className={`fixed bottom-3 transition-all duration-300 ${
-          isChatHidden ? '-left-[280px]' : 'left-3'
-        } w-[310px] bg-black bg-opacity-50 rounded-lg shadow-lg z-40`}
+        className={`fixed bottom-3 transition-all duration-300 ${isChatHidden ? '-left-[280px]' : 'left-3'
+          } w-[310px] bg-black bg-opacity-50 rounded-lg shadow-lg z-40`}
         onTouchStart={(e) => setStartX(e.touches[0].clientX)}
         onTouchMove={(e) => {
           if (startX !== null) {
@@ -1744,7 +1776,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
             <h3 className="text-white text-sm font-medium">{t.chat.title}</h3>
             <div className="flex items-center gap-2">
-            <button
+              <button
                 onClick={() => setIsMinimized(false)}
                 className="text-white hover:text-gray-300"
               >
@@ -1757,7 +1789,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
               >
                 {isChatHidden ? <AiOutlineRight size={24} className="icon" /> : <AiOutlineLeft size={24} className="icon" />}
               </button>
-              
+
             </div>
           </div>
         ) : (
@@ -1766,7 +1798,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
               <h3 className="text-white text-sm font-medium">{t.chat.title}</h3>
               <div className="flex items-center gap-2">
-                
+
                 <button
                   onClick={() => setIsMinimized(true)}
                   className="text-white hover:text-gray-300"
@@ -1782,18 +1814,18 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 </button>
               </div>
             </div>
-            
+
             {/* 拖曳區域 */}
             <div
               className="w-full h-1 cursor-ns-resize hover:bg-gray-500 absolute -top-1"
               onMouseDown={handleResizeStart}
               style={{ backgroundColor: 'transparent' }}
             />
-            
+
             {/* 聊天內容區域 */}
-            <div 
+            <div
               className="overflow-y-auto"
-              style={{ 
+              style={{
                 height: `${chatHeight - 80}px`,
                 scrollBehavior: 'smooth'
               }}
@@ -1807,8 +1839,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 console.log('Rendering message:', msg); // 添加日誌
                 const userColor = generatePastelColor(msg.nickname);
                 return (
-                  <div 
-                    key={msg.id} 
+                  <div
+                    key={msg.id}
                     className="px-3 py-2 hover:bg-black hover:bg-opacity-40"
                   >
                     <div className="text-sm break-words flex items-start">
@@ -1841,7 +1873,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
         {/* 輸入框 */}
         <div className="flex items-center gap-2 p-2 border-t border-gray-700">
-          <StickerPicker onStickerSelect={handleStickerSelect} />
+          <StickerPicker onStickerSelect={handleStickerSelect} roomId={roomId}/>
           <input
             type="text"
             value={newMessage}
@@ -1861,17 +1893,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                        transition-colors duration-200 flex items-center gap-1.5 
                        shadow-md hover:shadow-lg active:scale-95 transform"
           >
-            
+
             <IoSend size={16} className="text-white" />
           </button>
         </div>
       </div>
 
       {/* 房間資訊面板 */}
-      <div 
+      <div
         id="room-info-container"
         className="absolute top-2 right-2 w-64 bg-black bg-opacity-50 rounded-lg shadow-lg z-40"
-        style={{ 
+        style={{
           height: isRoomInfoMinimized ? '40px' : `${roomInfoHeight}px`,
           transition: 'height 0.2s'
         }}
@@ -1893,17 +1925,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
         {!isRoomInfoMinimized && (
           <>
-            <div 
+            <div
               className="overflow-y-auto px-2"
               style={{ height: `${roomInfoHeight - 70}px` }}
             >
-              
+
               <div className="py-2">
                 <p className="text-white text-sm mb-1">{t.roomInfo.onlineMembers}:</p>
                 <ul className="space-y-1">
                   {users.map((user, index) => (
-                    <li 
-                      key={index} 
+                    <li
+                      key={index}
                       className="text-white text-sm pl-2 relative"
                       onContextMenu={(e) => {
                         if (isCreator && user !== nickname) {

@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import styles from './index.module.css';
+import {auth, dataManager, performanceMonitor } from '../../config/firebase';
 
 interface StickerPickerProps {
   onStickerSelect: (stickerUrl: string) => void;
 }
 
-const StickerPicker: React.FC<StickerPickerProps> = ({ onStickerSelect }) => {
+interface StickerPickerProps {
+  onStickerSelect: (stickerUrl: string) => void;
+  roomId: string;
+}
+
+const StickerPicker: React.FC<StickerPickerProps> = ({ onStickerSelect, roomId }) => {
   const [isOpen, setIsOpen] = useState(false);
   
   const stickers = [
@@ -51,6 +57,25 @@ const StickerPicker: React.FC<StickerPickerProps> = ({ onStickerSelect }) => {
     '/stickers/sticker39.png',
     
   ];
+
+  const handleStickerSelect = async (stickerUrl: string) => {
+    const startTime = performance.now();
+    try {
+      await dataManager.batchUpdate({
+        [`rooms/${roomId}/m/${Date.now()}`]: {
+          u: auth.currentUser?.uid,
+          t: '',
+          type: 'sticker',
+          content: stickerUrl,
+          ts: Date.now()
+        }
+      });
+      performanceMonitor.logOperation(performance.now() - startTime);
+    } catch (error) {
+      performanceMonitor.metrics.errors++;
+      console.error('Sticker send error:', error);
+    }
+  };
 
   return (
     <div className="relative">
