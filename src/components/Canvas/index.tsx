@@ -1269,16 +1269,22 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   // 修改工具列樣式
   const getToolbarStyles = () => {
-    const baseStyles = `fixed transition-all duration-300 ${commonBgStyle} rounded-lg shadow-lg z-40`;
-    
-    if (isMobile()) {
-      return `${baseStyles} right-3 top-1/2 -translate-y-1/2 flex flex-col 
-        ${isToolbarMinimized ? 'translate-x-[60%]' : 'translate-x-0'} 
-        scale-110 p-1`;
-    }
-    
-    return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col 
-      ${isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'}`;
+    return `fixed transition-all duration-300 
+      bg-black/30 
+      backdrop-blur-md 
+      rounded-lg 
+      shadow-lg 
+      z-40`; // 設定比房間資訊面板更高的 z-index
+  };
+
+  // 確保頂部工具列也在上方
+  const getTopToolbarStyles = () => {
+    return `fixed top-3 left-1/2 transform -translate-x-1/2 
+      bg-black/30 
+      backdrop-blur-md 
+      rounded-lg 
+      shadow-lg 
+      z-40`; // 與右側工具列相同的 z-index
   };
 
   // 修改聊天室容器樣式
@@ -1296,12 +1302,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   const getRoomInfoStyles = () => {
     return {
       container: `fixed top-3 right-3 
-        w-[400px] // 增加寬度
+        w-[33vw] // 改為視窗寬度的三分之一
         bg-black/30 
         backdrop-blur-md 
         rounded-lg 
         shadow-lg 
-        z-50`, // 提高 z-index，確保在工具列上方
+        z-30`, // 降低 z-index，讓工具列在上方
       header: 'px-4 py-2',
       userList: 'text-white/90 text-sm'
     };
