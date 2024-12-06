@@ -81,7 +81,7 @@ const StickerPicker: React.FC<StickerPickerProps> = ({ onStickerSelect, roomId }
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-2 py-1 min-w-[30px] min-h-[30px] bg-gray-700 text-white rounded hover:bg-gray-600"
+        className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
       >
         <Image 
           src="/stickers/小八.png"

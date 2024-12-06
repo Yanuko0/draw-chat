@@ -26,6 +26,11 @@ import {
   syncStrategy
 } from '../../config/firebase';
 
+// Add at the top of the file, after imports
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
 interface CanvasProps {
   roomId: string;
   nickname: string;
@@ -40,6 +45,12 @@ interface LineElement {
   opacity?: number;
   dash?: number[];
   deviceType: 'mouse' | 'touch' | 'pen';
+  penData?: {
+    pressure: number;
+    tiltX: number;
+    tiltY: number;
+    timestamp: number;
+  };
 }
 
 interface ImageElement {
@@ -66,6 +77,18 @@ interface RoomUser {
 
 interface LineWithUser extends LineElement {
   userId: string;
+}
+
+// 首先定義回傳類型
+interface LineProperties {
+  tension: number;
+  opacity: number;
+  strokeWidth: number;
+  lineCap: string;
+  lineJoin: string;
+  globalCompositeOperation: string;
+  shadowBlur: number;
+  tiltFactor?: number;  // 添加可選的 tiltFactor
 }
 
 const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
@@ -227,10 +250,10 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   }, [roomId]);
 
 
-  const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen') => {
+  const getLineProperties = (toolType: string, deviceType: 'mouse' | 'touch' | 'pen'): LineProperties => {
     const baseWidthMultiplier = {
       mouse: 1.5,
-      touch: 1.5,
+      touch: isMobile() ? 2.0 : 1.5, // 增加手機觸控的筆觸寬度
       pen: 1.2
     }[deviceType];
 
@@ -249,7 +272,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowBlur: deviceType === 'pen' ? 0.1 : 0.2
+          shadowBlur: deviceType === 'pen' ? 0.1 : 0.2,
+          tiltFactor: 0.2
         };
 
       case 'brush':
@@ -260,7 +284,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowBlur: 1.5
+          shadowBlur: 1.5,
+          tiltFactor: 0.2
         };
 
       case 'marker':
@@ -271,7 +296,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'square',
           lineJoin: 'round',
           globalCompositeOperation: 'multiply',
-          shadowBlur: 0
+          shadowBlur: 0,
+          tiltFactor: 0.2
         };
 
       case 'highlighter':
@@ -282,7 +308,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'square',
           lineJoin: 'round',
           globalCompositeOperation: 'multiply',
-          shadowBlur: 0
+          shadowBlur: 0,
+          tiltFactor: 0.2
         };
 
       case 'ink':
@@ -293,7 +320,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowBlur: 0.3
+          shadowBlur: 0.3,
+          tiltFactor: 0.2
         };
 
       case 'eraser':
@@ -304,7 +332,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'destination-out',
-          shadowBlur: 0
+          shadowBlur: 0,
+          tiltFactor: 0.2
         };
 
       default:
@@ -315,7 +344,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           lineCap: 'round',
           lineJoin: 'round',
           globalCompositeOperation: 'source-over',
-          shadowBlur: 0
+          shadowBlur: 0,
+          tiltFactor: 0.2
         };
     }
   };
@@ -470,6 +500,30 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         y: stage.y() + e.evt.movementY,
       });
       return;
+    }
+    
+    if (currentLine?.deviceType === 'pen') {
+      const pressure = Math.max(0.2, e.evt.pressure * 1.5);
+      const tiltX = e.evt.tiltX || 0;
+      const tiltY = e.evt.tiltY || 0;
+      const tiltAngle = Math.sqrt(tiltX * tiltX + tiltY * tiltY);
+      
+      const lineProps = getLineProperties(tool, 'pen');
+      const tiltFactor = lineProps.tiltFactor || 0.2;
+      
+      // 更新筆觸寬度
+      const tiltAdjustedWidth = currentLine.strokeWidth * (1 + tiltAngle * tiltFactor);
+      const finalStrokeWidth = tiltAdjustedWidth * pressure;
+      
+      // 更新線條屬性
+      currentLine.strokeWidth = finalStrokeWidth;
+      currentLine.opacity = Math.min(1, lineProps.opacity * (1 + pressure * 0.2));
+      currentLine.penData = {
+        pressure,
+        tiltX,
+        tiltY,
+        timestamp: Date.now()
+      };
     }
 
     if (!isPressing || !currentLine || !lastPointerPosition) return;
@@ -1204,23 +1258,71 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     }
   };
 
-  const getToolbarStyles = () => {
-    const baseStyles = "fixed transition-all duration-300 bg-black bg-opacity-50 rounded-lg shadow-lg z-40";
+  // 獲取適當的圖標大小
+  const getIconSize = () => {
+    return isMobile() ? 32 : 24;
+  };
 
-    switch (toolbarPosition) {
-      case 'left':
-        return `${baseStyles} left-2 top-1/2 -translate-y-1/2 flex flex-col ${isToolbarMinimized ? 'translate-x-[-40%]' : 'translate-x-0'
-          }`;
-      case 'right':
-        return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col ${isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'
-          }`;
-      case 'top':
-        return `${baseStyles} top-2 left-1/2 -translate-x-1/2 flex flex-row min-w-[40px] ${isToolbarMinimized ? 'translate-y-[-40%]' : 'translate-y-0'
-          }`;
-      case 'bottom':
-        return `${baseStyles} bottom-2 right-0 flex flex-row min-w-[40px] ${isToolbarMinimized ? 'translate-y-[40%]' : 'translate-y-0'
-          }`;
+  // 定義統一的背景顏色樣式
+  const commonBgStyle = isMobile() 
+  ? 'bg-black/50 backdrop-blur-sm' 
+  : 'bg-black/50 backdrop-blur-sm';
+
+  // 修改工具列樣式
+  const getToolbarStyles = () => {
+    const baseStyles = `fixed transition-all duration-300 ${commonBgStyle} rounded-lg shadow-lg z-40`;
+    
+    if (isMobile()) {
+      return `${baseStyles} right-3 top-1/2 -translate-y-1/2 flex flex-col 
+        ${isToolbarMinimized ? 'translate-x-[60%]' : 'translate-x-0'} 
+        scale-110 p-1`;
     }
+    
+    return `${baseStyles} right-2 top-1/2 -translate-y-1/2 flex flex-col 
+      ${isToolbarMinimized ? 'translate-x-[40%]' : 'translate-x-0'}`;
+  };
+
+  // 修改聊天室容器樣式
+  const getChatContainerStyles = () => {
+    if (isMobile()) {
+      return `fixed transition-all duration-300 
+        ${isChatHidden ? 'translate-y-full' : 'translate-y-0'} 
+        bottom-0 
+        left-0 right-0 
+        w-full 
+        max-h-[60vh] 
+        ${commonBgStyle}
+        rounded-t-lg 
+        shadow-lg 
+        z-40
+        text-base`;
+    }
+    
+    return `fixed bottom-3 transition-all duration-300 
+      ${isChatHidden ? '-left-[280px]' : 'left-3'} 
+      w-[310px] 
+      ${commonBgStyle}
+      rounded-lg 
+      shadow-lg 
+      z-40`;
+  };
+
+  // 修改房間資訊面板樣式
+  const getRoomInfoStyles = () => {
+    if (isMobile()) {
+      return {
+        container: `fixed top-2 right-2 w-[42%] 
+          ${commonBgStyle} rounded-lg shadow-lg z-40 scale-110`,
+        header: 'text-base p-3 text-white',
+        userList: 'text-base text-white'
+      };
+    }
+    
+    return {
+      container: `fixed top-2 right-2 w-64 ${commonBgStyle} rounded-lg shadow-lg z-40`,
+      header: 'text-sm p-2 text-white',
+      userList: 'text-sm text-white'
+    };
   };
 
   // 輔助函數：判斷設備類型
@@ -1441,6 +1543,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
   // 添加自動清理
   useEffect(() => {
     const interval = setInterval(() => {
+      dataManager.cleanOldData(roomId);
       dataManager.cleanInactiveUsers(roomId);
     }, 5 * 60 * 1000);
 
@@ -1525,23 +1628,60 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       e.evt.preventDefault();
       const stage = e.target.getStage();
       const pos = stage.getRelativePointerPosition();
+      
+      // 獲取電繪筆的額外資訊
       const pressure = Math.max(0.2, e.evt.pressure * 1.5);
-
-      const penLineProps = {
+      const tiltX = e.evt.tiltX || 0;
+      const tiltY = e.evt.tiltY || 0;
+      const tiltAngle = Math.sqrt(tiltX * tiltX + tiltY * tiltY);
+      
+      const lineProps = getLineProperties(tool, 'pen');
+      const tiltFactor = lineProps.tiltFactor || 0.2;
+      
+      // 根據傾斜角度調整筆觸寬度
+      const tiltAdjustedWidth = strokeWidth * (1 + tiltAngle * tiltFactor);
+      const finalStrokeWidth = tiltAdjustedWidth * pressure;
+  
+      const newLine: LineWithUser = {
         tool,
         points: [pos.x, pos.y],
         strokeColor: tool === 'eraser' ? '#ffffff' : strokeColor,
-        strokeWidth: strokeWidth * pressure,
-        tension: 0.2,
-        opacity: 0.95,
-        deviceType: 'pen' as const,
+        strokeWidth: finalStrokeWidth,
+        tension: lineProps.tension,
+        opacity: Math.min(1, lineProps.opacity * (1 + pressure * 0.2)),
+        deviceType: 'pen',
         userId: nickname,
+        // 儲存電繪筆的額外資訊
+        penData: {
+          pressure,
+          tiltX,
+          tiltY,
+          timestamp: Date.now()
+        }
       };
-
-      setCurrentLine(penLineProps);
+  
+      setCurrentLine(newLine);
       setLastPointerPosition({ x: pos.x, y: pos.y });
     }
   }, [tool, strokeColor, strokeWidth, nickname]);
+
+  // 修改聊天室隱藏按鈕樣式
+  const getChatToggleButton = () => {
+    if (isMobile() && isChatHidden) {
+      return (
+        <button
+          onClick={() => setIsChatHidden(false)}
+          className={`fixed bottom-4 right-4 w-12 h-12 
+            ${commonBgStyle} rounded-full shadow-lg z-40 
+            flex items-center justify-center
+            border border-white/20`}
+        >
+          <AiOutlineUp size={24} className="text-white" />
+        </button>
+      );
+    }
+    return null;
+  };
 
   return (
     <div
@@ -1560,6 +1700,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             handlePointerDown(e);
           }
         }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
         style={{
           touchAction: 'none'
         }}
@@ -1801,8 +1944,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       {/* 聊天室面板 */}
       <div
         id="chat-container"
-        className={`fixed bottom-3 transition-all duration-300 ${isChatHidden ? '-left-[280px]' : 'left-3'
-          } w-[310px] bg-black bg-opacity-50 rounded-lg shadow-lg z-40`}
+        className={getChatContainerStyles()}
         onTouchStart={(e) => setStartX(e.touches[0].clientX)}
         onTouchMove={(e) => {
           if (startX !== null) {
@@ -1914,7 +2056,7 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           </>
         )}
 
-        {/* 聊天室輸入區域 */}
+        {/* 輸入框 */}
         <div className="flex items-center gap-2 p-2 border-t border-gray-700">
           <StickerPicker onStickerSelect={handleStickerSelect} roomId={roomId}/>
           <input
@@ -1945,15 +2087,15 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
       {/* 房間資訊面板 */}
       <div
         id="room-info-container"
-        className="absolute top-2 right-2 w-64 bg-black bg-opacity-50 rounded-lg shadow-lg z-40"
+        className={getRoomInfoStyles().container}
         style={{
-          height: isRoomInfoMinimized ? '40px' : `${roomInfoHeight}px`,
+          height: isRoomInfoMinimized ? (isMobile() ? '50px' : '40px') : `${roomInfoHeight}px`,
           transition: 'height 0.2s'
         }}
       >
-        <div className="flex justify-between items-center p-2 border-b border-white border-opacity-20">
-          <h3 className="text-white text-sm font-medium">{t.roomInfo.roomName}:{roomId}</h3>
-          <span className="text-white text-sm">{t.roomInfo.userCount}: {users.length}</span>
+        <div className={`flex justify-between items-center border-b border-white/20 ${getRoomInfoStyles().header}`}>
+          <h3 className={getRoomInfoStyles().userList}>{t.roomInfo.roomName}:{roomId}</h3>
+          <span className={getRoomInfoStyles().userList}>{t.roomInfo.userCount}: {users.length}</span>
           <button
             onClick={() => setIsRoomInfoMinimized(!isRoomInfoMinimized)}
             className="text-white hover:text-gray-300"
@@ -1974,12 +2116,12 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
             >
 
               <div className="py-2">
-                <p className="text-white text-sm mb-1">{t.roomInfo.onlineMembers}:</p>
+                <p className={getRoomInfoStyles().userList}>{t.roomInfo.onlineMembers}:</p>
                 <ul className="space-y-1">
                   {users.map((user, index) => (
                     <li
                       key={index}
-                      className="text-white text-sm pl-2 relative"
+                      className={getRoomInfoStyles().userList}
                       onContextMenu={(e) => {
                         if (isCreator && user !== nickname) {
                           e.preventDefault();
@@ -2048,6 +2190,9 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
           </div>
         </div>
       )}
+
+      {/* 添加聊天室切換按鈕 */}
+      {getChatToggleButton()}
     </div>
   );
 };

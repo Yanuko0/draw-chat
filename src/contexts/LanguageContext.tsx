@@ -143,7 +143,7 @@ export const translations = {
       strokeWidth: 'px'
     },
     roomInfo: {
-      roomName: '房間名',
+      roomName: '房名',
       userCount: '人數',
       onlineMembers: '在線成員'
     }
