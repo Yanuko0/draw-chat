@@ -1294,19 +1294,16 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
 
   // 修改房間資訊面板樣式
   const getRoomInfoStyles = () => {
-    if (isMobile()) {
-      return {
-        container: `fixed top-2 right-2 w-[42%] 
-          ${commonBgStyle} rounded-lg shadow-lg z-40 scale-110`,
-        header: 'text-base p-3 text-white',
-        userList: 'text-base text-white'
-      };
-    }
-    
     return {
-      container: `fixed top-2 right-2 w-64 ${commonBgStyle} rounded-lg shadow-lg z-40`,
-      header: 'text-sm p-2 text-white',
-      userList: 'text-sm text-white'
+      container: `fixed top-3 right-3 
+        w-[400px] // 增加寬度
+        bg-black/30 
+        backdrop-blur-md 
+        rounded-lg 
+        shadow-lg 
+        z-50`, // 提高 z-index，確保在工具列上方
+      header: 'px-4 py-2',
+      userList: 'text-white/90 text-sm'
     };
   };
 
@@ -2121,8 +2118,8 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
         }}
       >
         <div className={`flex justify-between items-center border-b border-white/20 ${getRoomInfoStyles().header}`}>
-          <h3 className={getRoomInfoStyles().userList}>{t.roomInfo.roomName}:{roomId}</h3>
-          <span className={getRoomInfoStyles().userList}>{t.roomInfo.userCount}: {users.length}</span>
+          <h3 className={getRoomInfoStyles().userList + ' flex-1'}>{t.roomInfo.roomName}: {roomId}</h3>
+          <span className={getRoomInfoStyles().userList + ' mx-4'}>{t.roomInfo.userCount}: {users.length}</span>
           <button
             onClick={() => setIsRoomInfoMinimized(!isRoomInfoMinimized)}
             className="text-white hover:text-gray-300"
