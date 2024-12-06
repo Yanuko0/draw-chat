@@ -1668,6 +1668,39 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
     return null;
   };
 
+  // 1. 添加 meta viewport 設置
+  useEffect(() => {
+    const viewport = document.querySelector('meta[name=viewport]');
+    if (viewport) {
+      viewport.setAttribute('content', 
+        'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    }
+  }, []);
+
+  // 2. 修改聊天室輸入框
+  <input
+    type="text"
+    value={newMessage}
+    onChange={(e) => setNewMessage(e.target.value)}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSendMessage(e);
+      }
+    }}
+    onFocus={() => {
+      // 防止輸入框聚焦時的自動縮放
+      document.body.style.zoom = '1';
+    }}
+    placeholder="message..."
+    className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+    style={{
+      fontSize: '16px', // 防止 iOS 自動縮放
+      transform: 'translateZ(0)', // 強制 GPU 渲染
+      WebkitAppearance: 'none', // 移除預設樣式
+    }}
+  />
+
   return (
     <div
       className="relative"
@@ -2054,8 +2087,17 @@ const Canvas: React.FC<CanvasProps> = ({ roomId, nickname }) => {
                 handleSendMessage(e);
               }
             }}
+            onFocus={() => {
+              // 防止輸入框聚焦時的自動縮放
+              document.body.style.zoom = '1';
+            }}
             placeholder="message..."
             className="flex-1 px-3 py-1 bg-black bg-opacity-50 text-white border border-white border-opacity-20 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            style={{
+              fontSize: '16px', // 防止 iOS 自動縮放
+              transform: 'translateZ(0)', // 強制 GPU 渲染
+              WebkitAppearance: 'none', // 移除預設樣式
+            }}
           />
           <button
             onClick={handleSendMessage}
